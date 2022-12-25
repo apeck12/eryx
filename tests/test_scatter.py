@@ -19,13 +19,20 @@ class TestScatter(object):
         cls.ff_a, cls.ff_b, cls.ff_c = extract_ff_coefs("histidine.pdb")
         
     def test_compute_form_factors(self):
-        """ Check that form factors calculation is correct. """
+        """ Check that the form factors calculation is correct. """
         indices = np.random.randint(0, high=self.q_grid.shape[0], size=4)
         atom_index = np.random.randint(0, high=self.ff_a.shape[0], size=1)[0]
         fj = scatter.compute_form_factors(self.q_grid[indices], self.ff_a, self.ff_b, self.ff_c)[:,atom_index]
         stols2 = np.square(np.linalg.norm(self.q_grid[indices], axis=1) / (4*np.pi))
         ref_fj = np.array([self.elements[atom_index].it92.calculate_sf(st2) for st2 in stols2])
         assert np.allclose(ref_fj, fj)
+
+    def test_structure_factors(self):
+        """ Check that accelerated structure factors calculation is correct. """
+        U = np.random.randn(self.xyz.shape[0])
+        sf = scatter.structure_factors(self.q_grid, self.xyz, self.ff_a, self.ff_b, self.ff_c, U)
+        sf_ref = reference.structure_factors(self.q_grid, self.xyz, self.elements, U)
+        assert np.allclose(np.square(np.abs(sf)), np.square(np.abs(sf_ref)))
         
 class TestReference(object):
     """
