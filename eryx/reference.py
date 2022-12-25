@@ -40,8 +40,8 @@ def structure_factors(q_grid, xyz, elements, U=None):
             else:
                 qUq = np.dot(np.dot(q_vector, U[j]), q_vector)
 
-            A[i] +=      fj * np.sin( np.dot(q_vector, rj) ) * np.exp(- 0.5 * qUq)
-            A[i] += 1j * fj * np.cos( np.dot(q_vector, rj) ) * np.exp(- 0.5 * qUq)
+            A[i] +=      fj * np.cos( np.dot(q_vector, rj) ) * np.exp(- 0.5 * qUq)
+            A[i] += 1j * fj * np.sin( np.dot(q_vector, rj) ) * np.exp(- 0.5 * qUq)
 
     return A
 

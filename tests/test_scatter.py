@@ -1,5 +1,7 @@
 import numpy as np
-import os, sys
+import gemmi
+import os
+import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from eryx.pdb import *
@@ -15,8 +17,8 @@ class TestScatter(object):
         qmesh = np.mgrid[-2:2:21j,-2:2:21j,-2:2:21j]
         cls.map_shape = qmesh.shape[1:]
         cls.q_grid = qmesh.T.reshape(-1, 3)
-        cls.xyz, cls.elements = extract_model_info("histidine.pdb")
-        cls.ff_a, cls.ff_b, cls.ff_c = extract_ff_coefs("histidine.pdb")
+        cls.xyz, cls.elements = extract_model_info("histidine_p1.pdb")
+        cls.ff_a, cls.ff_b, cls.ff_c = extract_ff_coefs("histidine_p1.pdb")
         
     def test_compute_form_factors(self):
         """ Check that the form factors calculation is correct. """
@@ -33,6 +35,17 @@ class TestScatter(object):
         sf = scatter.structure_factors(self.q_grid, self.xyz, self.ff_a, self.ff_b, self.ff_c, U)
         sf_ref = reference.structure_factors(self.q_grid, self.xyz, self.elements, U)
         assert np.allclose(np.square(np.abs(sf)), np.square(np.abs(sf_ref)))
+
+    def test_structure_factors_vs_gemmi(self):
+        """ Check that structure factors calculation matches gemmi. """
+        hkl = np.random.randint(-10, high=10, size=3)
+        structure = gemmi.read_pdb("histidine_p1.pdb")
+        calc_x = gemmi.StructureFactorCalculatorX(structure.cell)
+        sf_ref = np.array(calc_x.calculate_sf_from_model(structure[0], hkl))
+        A_inv = np.array(structure.cell.fractionalization_matrix)
+        q_vec = 2*np.pi*np.inner(A_inv, np.array(hkl))
+        sf = scatter.structure_factors(np.array([q_vec]), self.xyz, self.ff_a, self.ff_b, self.ff_c, U=None)
+        assert np.allclose(sf, sf_ref)
         
 class TestReference(object):
     """

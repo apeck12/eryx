@@ -55,7 +55,7 @@ def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
     qmags = np.linalg.norm(q_grid, axis=1)
     qUq = np.square(qmags[:,np.newaxis]) * U
     
-    A = 1j * fj * np.cos(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
-    A += fj * np.sin(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
+    A = 1j * fj * np.sin(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
+    A += fj * np.cos(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
     A = np.sum(A, axis=1)
     return A 
