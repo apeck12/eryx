@@ -25,23 +25,25 @@ def compute_form_factors(q_grid, ff_a, ff_b, ff_c):
     fj = np.sum(fj, axis=1) + ff_c[:,np.newaxis]
     return fj.T
 
-def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
+def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
     """
     Compute the structure factors for an atomic model at 
     the given q-vectors. 
-​
+
     Parameters
     ----------
     q_grid : numpy.ndarray, shape (n_points, 3)
         q-vectors in Angstrom
     xyz : numpy.ndarray, shape (n_atoms, 3)
         atomic xyz positions in Angstroms
-    elements : list of gemmi.Element objects
-        element objects, ordered as xyz
-    adps : numpy.ndarray, shape (n_atoms,) 
+    ff_a : numpy.ndarray, shape (n_atoms, 4)
+        a coefficient of atomic form factors
+    ff_b : numpy.ndarray, shape (n_atoms, 4)
+        b coefficient of atomic form factors
+    ff_c : numpy.ndarray, shape (n_atoms,)
+        c coefficient of atomic form factors
+    U : numpy.ndarray, shape (n_atoms,) 
         isotropic displacement parameters
-    sf_complex : bool
-        if False, return intensities rather than complex values
         
     Returns
     -------
@@ -59,3 +61,21 @@ def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
     A += fj * np.cos(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
     A = np.sum(A, axis=1)
     return A 
+
+def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None, batch_size=100000):
+    """
+    Batched version of the structure factor calculation. See 
+    docstring for structure_factors_batch for parameters and 
+    returns.
+    """
+    n_batches = q_grid.shape[0] // batch_size
+    if n_batches == 0:
+        n_batches = 1
+    splits = np.append(np.arange(n_batches) * batch_size, np.array([q_grid.shape[0]]))
+
+    A = np.zeros(q_grid.shape[0], dtype=np.complex128)
+    for batch in range(n_batches):
+        q_sel = q_grid[splits[batch]: splits[batch+1]]
+        A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U)    
+
+    return A
