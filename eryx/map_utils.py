@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def generate_grid(A_inv, hrange, krange, lrange):
+def generate_grid(A_inv, hsampling, ksampling, lsampling):
     """
     Generate a grid of q-vectors based on the desired extents 
     and spacing in hkl space.
@@ -10,11 +10,11 @@ def generate_grid(A_inv, hrange, krange, lrange):
     ----------
     A_inv : numpy.ndarray, shape (3,3)
         fractional cell orthogonalization matrix
-    hrange : tuple, shape (3,)
+    hsampling : tuple, shape (3,)
         (hmin, hmax, oversampling relative to Miller indices)
-    krange : tuple, shape (3,)
+    ksampling : tuple, shape (3,)
         (kmin, kmax, oversampling relative to Miller indices)
-    lrange : tuple, shape (3,)
+    lsampling : tuple, shape (3,)
         (lmin, lmax, oversampling relative to Miller indices)
     
     Returns
@@ -24,13 +24,13 @@ def generate_grid(A_inv, hrange, krange, lrange):
     map_shape : tuple, shape (3,)
         shape of 3d map
     """
-    hsteps = int(hrange[2]*(hrange[1]-hrange[0])+1)
-    ksteps = int(krange[2]*(krange[1]-krange[0])+1)
-    lsteps = int(lrange[2]*(lrange[1]-lrange[0])+1)
+    hsteps = int(hsampling[2]*(hsampling[1]-hsampling[0])+1)
+    ksteps = int(ksampling[2]*(ksampling[1]-ksampling[0])+1)
+    lsteps = int(lsampling[2]*(lsampling[1]-lsampling[0])+1)
     
-    hkl_grid = np.mgrid[lrange[0]:lrange[1]:lsteps*1j,
-                        krange[0]:krange[1]:ksteps*1j,
-                        hrange[0]:hrange[1]:hsteps*1j]
+    hkl_grid = np.mgrid[lsampling[0]:lsampling[1]:lsteps*1j,
+                        ksampling[0]:ksampling[1]:ksteps*1j,
+                        hsampling[0]:hsampling[1]:hsteps*1j]
     map_shape = hkl_grid.shape[1:][::-1]
     hkl_grid = hkl_grid.T.reshape(-1,3)
     hkl_grid = hkl_grid[:, [2,1,0]]
