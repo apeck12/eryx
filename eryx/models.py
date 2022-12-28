@@ -28,6 +28,8 @@ def compute_transform(transform, pdb_path, hsampling, ksampling, lsampling, U=No
         
     Returns
     -------
+    q_grid : numpy.ndarray, (n_points, 3)
+        q-vectors corresponding to flattened intensity map
     I : numpy.ndarray, 3d
         intensity map of the molecular transform
     """
@@ -44,4 +46,4 @@ def compute_transform(transform, pdb_path, hsampling, ksampling, lsampling, U=No
     for asu in range(model.xyz.shape[0]):
         A = structure_factors(q_grid, model.xyz[asu], model.ff_a, model.ff_b, model.ff_c, U=U, batch_size=batch_size)
         I += np.square(np.abs(A))
-    return I.reshape(map_shape)
+    return q_grid, I.reshape(map_shape)
