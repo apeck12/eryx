@@ -3,7 +3,8 @@ from .pdb import AtomicModel
 from .map_utils import generate_grid, pearson_cc
 from .scatter import structure_factors
 
-def compute_transform(transform, pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000):
+def compute_transform(transform, pdb_path, hsampling, ksampling, lsampling,
+                      U=None, batch_size=10000, expand_p1=True):
     """
     Compute either the crystal transform or the molecular transform
     as the coherent and incoherent sums of the scattering from each 
@@ -34,9 +35,11 @@ def compute_transform(transform, pdb_path, hsampling, ksampling, lsampling, U=No
         intensity map of the molecular transform
     """
     if transform=='molecular':
-        model = AtomicModel(pdb_path, expand_p1=True)
+        model = AtomicModel(pdb_path, expand_p1=expand_p1)
     elif transform=='crystal':
-        model = AtomicModel(pdb_path)
+        model = AtomicModel(pdb_path, expand_p1=expand_p1)
+        if expand_p1:
+            model.concatenate_asus()
         model.xyz = np.expand_dims(model.xyz, axis=0)
     else:
         raise ValueError("Transform type not recognized. Must be molecular or crystal")
