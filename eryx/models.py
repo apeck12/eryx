@@ -100,9 +100,9 @@ class TranslationalDisorder:
             sigmas = np.array([sigmas])
 
         if len(sigmas.shape) == 1:
-            wilson = np.square(self.q_mags) * sigmas[:,np.newaxis]
+            wilson = np.square(self.q_mags) * np.square(sigmas)[:,np.newaxis]
         else:
-            wilson = np.sum(self.q_grid.T * np.dot(sigmas[:,np.newaxis] * np.eye(3), self.q_grid.T), axis=1)
+            wilson = np.sum(self.q_grid.T * np.dot(np.square(sigmas)[:,np.newaxis] * np.eye(3), self.q_grid.T), axis=1)
 
         Id = self.transform.flatten() * (1 - np.exp(-1 * wilson))
         return Id
