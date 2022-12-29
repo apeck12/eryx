@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.signal
 from .pdb import AtomicModel
 from .map_utils import generate_grid, pearson_cc
 from .scatter import structure_factors
