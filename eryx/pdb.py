@@ -78,3 +78,16 @@ class AtomicModel:
         self.ff_b = np.array([atom.element.it92.b for res in self.residues for atom in res])
         self.ff_c = np.array([atom.element.it92.c for res in self.residues for atom in res])
         self.elements = [atom.element for res in self.residues for atom in res]
+        
+    def concatenate_asus(self):
+        """
+        Flatten the xyz coordinates from dimensions (n_asu, n_asu_atoms, 3)
+        to (n_asu * n_asu_atoms, 3), and tile the form factor coefficients
+        and gemmi element objects to match.
+        """
+        n_asu = self.xyz.shape[0]
+        self.xyz = self.xyz.reshape(-1, self.xyz.shape[-1])
+        self.ff_a = np.tile(self.ff_a, (n_asu, 1))
+        self.ff_b = np.tile(self.ff_b, (n_asu, 1))
+        self.ff_c = np.tile(self.ff_c, 4)
+        self.elements = n_asu * self.elements
