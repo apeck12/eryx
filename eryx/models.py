@@ -79,7 +79,6 @@ class TranslationalDisorder:
                                                         batch_size=batch_size)
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         self.map_shape = self.transform.shape
-        self.map_optimized = None
     
     def apply_disorder(self, sigmas):
         """
@@ -108,7 +107,7 @@ class TranslationalDisorder:
         Id = self.transform.flatten() * (1 - np.exp(-1 * wilson))
         return Id
     
-    def optimize_sigma(self, target, sigmas_min, sigmas_max, n_search=20):
+    def optimize(self, target, sigmas_min, sigmas_max, n_search=20):
         """
         Scan to find the sigma that maximizes the overall Pearson
         correlation between the target and computed maps. 
@@ -142,9 +141,10 @@ class TranslationalDisorder:
         Id = self.apply_disorder(sigmas)
         ccs = pearson_cc(Id, np.expand_dims(target.flatten(), axis=0))
         opt_index = np.argmax(ccs)
-        self.map_optimized = Id[opt_index].reshape(self.map_shape)
+        self.opt_sigma = sigmas[opt_index]
+        self.opt_map = Id[opt_index].reshape(self.map_shape)
 
-        print(f"Optimal sigma: {sigmas[opt_index]}, with correlation coefficient {ccs[opt_index]:.4f}")
+        print(f"Optimal sigma: {self.opt_sigma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas
 
 class LiquidLikeMotions:

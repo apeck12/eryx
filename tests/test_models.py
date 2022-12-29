@@ -32,12 +32,12 @@ class TestTranslationalDisorder:
         anisotropic = self.model.apply_disorder(np.array([sigma*np.ones(3)]))
         assert np.allclose(isotropic, anisotropic)
         
-    def test_optimize_sigma(self):
+    def test_optimize(self):
         """ Check that optimization identifies the right sigma. """
         sigma = np.random.uniform()
         target = self.model.transform.flatten() * (1 - np.exp(-1 * np.square(sigma)*np.square(self.model.q_mags)))
         target = target.reshape(self.model.map_shape)
-        ccs, sigmas = self.model.optimize_sigma(np.random.uniform()*target, 0.01, 0.99, 30)
+        ccs, sigmas = self.model.optimize(np.random.uniform()*target, 0.01, 0.99, 30)
         assert np.argmax(ccs) == np.argmin(np.abs((sigmas - sigma)))
 
 class TestLiquidLikeMotions:
