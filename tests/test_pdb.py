@@ -10,7 +10,6 @@ class TestPDB(object):
     """
     Check correctness of PDB extraction methods.
     """
-    @classmethod
     def setup_class(cls):
         cls.model_p212121 = AtomicModel("histidine.pdb", expand_p1=True)
         cls.model_p1 = AtomicModel("histidine_p1.pdb")
