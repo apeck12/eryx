@@ -5,6 +5,7 @@ class AtomicModel:
     
     def __init__(self, pdb_file, expand_p1=False, frame=0):
         self.structure = gemmi.read_pdb(pdb_file)
+        self.n_model = len(self.structure)
         self.model = self.structure[frame]
         self.residues = [res for ch in self.model for res in ch]
         self._extract_cell()
