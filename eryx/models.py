@@ -41,10 +41,12 @@ def compute_transform(transform, pdb_path, hsampling, ksampling, lsampling,
         model = AtomicModel(pdb_path, expand_p1=expand_p1)
         if expand_p1:
             model.concatenate_asus()
-        model.xyz = np.expand_dims(model.xyz, axis=0)
     else:
         raise ValueError("Transform type not recognized. Must be molecular or crystal")
-        
+
+    if len(model.xyz.shape) == 2:
+        model.xyz = np.expand_dims(model.xyz, axis=0)
+    
     q_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling)
     I = np.zeros(q_grid.shape[0])
     for asu in range(model.xyz.shape[0]):
