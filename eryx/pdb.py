@@ -11,6 +11,7 @@ class AtomicModel:
         self._extract_cell()
         self.xyz = self._extract_xyz(expand_p1)
         self._extract_ff_coefs()
+        self._extract_bfactors()
         
     def _extract_cell(self):
         """
@@ -80,6 +81,12 @@ class AtomicModel:
         self.ff_c = np.array([atom.element.it92.c for res in self.residues for atom in res])
         self.elements = [atom.element for res in self.residues for atom in res]
         
+    def _extract_bfactors(self):
+        """
+        Extract per-atom isotropic B-factors.
+        """
+        self.b_factors = np.array([atom.b_iso for res in self.residues for atom in res])
+        
     def concatenate_asus(self):
         """
         Flatten the xyz coordinates from dimensions (n_asu, n_asu_atoms, 3)
@@ -90,5 +97,6 @@ class AtomicModel:
         self.xyz = self.xyz.reshape(-1, self.xyz.shape[-1])
         self.ff_a = np.tile(self.ff_a, (n_asu, 1))
         self.ff_b = np.tile(self.ff_b, (n_asu, 1))
-        self.ff_c = np.tile(self.ff_c, 4)
+        self.ff_c = np.tile(self.ff_c, n_asu)
         self.elements = n_asu * self.elements
+        self.b_factors = np.tile(self.b_factors, n_asu)
