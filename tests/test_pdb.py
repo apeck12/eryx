@@ -11,23 +11,24 @@ class TestPDB(object):
     Check correctness of PDB extraction methods.
     """
     def setup_class(cls):
-        cls.model_p212121 = AtomicModel("histidine.pdb", expand_p1=True)
-        cls.model_p1 = AtomicModel("histidine_p1.pdb")
-        cls.n_asus = 4
+        cls.pdb_ids = ["5zck", "7n2h", "193l"] # P 21 21 21, P 31, P 43 21 2
         
-    def test_get_xyz_asus(self):
-        """ Check that asu coordinates are correctly calculated. """
-        asu = {i:self.model_p1.xyz[i*21:i*21+21,:] for i in range(self.n_asus)}
-        match = list()
-        for i in range(self.model_p212121.xyz.shape[0]):
-            arr = np.array([np.sum(self.model_p212121.xyz[i] - asu[j]) for j in asu.keys()])
-            match.append(np.where(np.around(arr, 6)==0)[0][0])
-        match = np.sort(np.array(match))
-        assert np.allclose(match, np.arange(self.n_asus))
-
-    def test_concatenate_asus(self):
+    def test_various_sg(self):
         """ Check that form factors are properly expanded. """
-        self.model_p212121.concatenate_asus()
-        assert np.allclose(self.model_p1.ff_a, self.model_p212121.ff_a)
-        assert np.allclose(self.model_p1.ff_b, self.model_p212121.ff_b)
-        assert np.allclose(self.model_p1.ff_c, self.model_p212121.ff_c)
+        for pdb_id in self.pdb_ids:
+            # load all frames from Chimera-generated p1 and eryx-expanded asu
+            model_p1 = AtomicModel(f"pdbs/{pdb_id}_p1.pdb", frame=-1)
+            model = AtomicModel(f"pdbs/{pdb_id}.pdb", expand_p1=True)
+
+            # check that form factors match
+            assert np.allclose(model_p1.ff_a, model.ff_a)
+            assert np.allclose(model_p1.ff_b, model.ff_b)
+            assert np.allclose(model_p1.ff_c, model.ff_c)
+
+            # check that atomic coordinates match within a cell shift
+            xyz_ref = np.array([model_p1.xyz[i] for i in range(model_p1.xyz.shape[0])])
+            xyz_tar = np.array([model.xyz[i] for i in range(model.xyz.shape[0])])
+            xyz_ref = xyz_ref.reshape(-1, xyz_ref.shape[-1])
+            xyz_tar = xyz_tar.reshape(-1, xyz_tar.shape[-1])
+            shifts = np.mean(np.abs(xyz_ref - xyz_tar), axis=0) / model_p1.cell[:3]
+            assert np.allclose(xyz_tar - shifts * model_p1.cell[:3], xyz_ref, atol=1e-2)
