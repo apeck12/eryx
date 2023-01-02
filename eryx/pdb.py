@@ -278,21 +278,18 @@ class AtomicModel:
         if expand_p1:
             self._tile_form_factors()
     
-    def flatten_model(self, frame=0):
+    def flatten_model(self):
         """
         Set self variables to correspond to the given frame,
         for instance flattening the atomic coordinates from 
-        (n_frames, n_atoms, 3) to (n_atoms, 3). Particularly
-        useful if multiple frames are not present.
-        
-        Parameters
-        ----------
-        frame : int
-            index of frame to retain
+        (n_frames, n_atoms, 3) to (n_atoms, 3). 
         """
-        self.xyz = self.xyz[frame]
-        self.ff_a, self.ff_b, self.ff_c = self.ff_a[frame], self.ff_b[frame], self.ff_c[frame]
-        self.elements = self.elements[frame]
+        n_asu = self.xyz.shape[0]
+        self.xyz = self.xyz.reshape(-1, self.xyz.shape[-1])
+        self.ff_a = self.ff_a.reshape(-1, self.ff_a.shape[-1])
+        self.ff_b = self.ff_b.reshape(-1, self.ff_b.shape[-1])
+        self.ff_c = self.ff_c.flatten()
+        self.elements = [item for sublist in self.elements for item in sublist]
         
     def _tile_form_factors(self):
         """
