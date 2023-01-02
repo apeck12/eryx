@@ -15,7 +15,9 @@ class TestScatter(object):
     """
     @classmethod
     def setup_class(cls):
-        cls.model = AtomicModel("histidine_p1.pdb")
+        cls.pdb_path = "pdbs/histidine_p1.pdb"
+        cls.model = AtomicModel(cls.pdb_path)
+        cls.model.flatten_model()
         cls.q_grid, cls.map_shape = map_utils.generate_grid(cls.model.A_inv, (-2,2,5), (-2,2,5), (-2,2,5))
         
     def test_compute_form_factors(self):
@@ -37,7 +39,7 @@ class TestScatter(object):
     def test_structure_factors_vs_gemmi(self):
         """ Check that structure factors calculation matches gemmi. """
         hkl = np.random.randint(-10, high=10, size=3)
-        structure = gemmi.read_pdb("histidine_p1.pdb")
+        structure = gemmi.read_pdb(self.pdb_path)
         calc_x = gemmi.StructureFactorCalculatorX(structure.cell)
         sf_ref = np.array(calc_x.calculate_sf_from_model(structure[0], hkl))
         A_inv = np.array(structure.cell.fractionalization_matrix)
@@ -51,7 +53,8 @@ class TestReference(object):
     """
     @classmethod
     def setup_class(cls):
-        cls.model = AtomicModel("pentagon.pdb")
+        cls.model = AtomicModel("pdbs/pentagon.pdb", expand_p1=False)
+        cls.model.flatten_model()
         cls.q_grid, cls.map_shape = map_utils.generate_grid(cls.model.A_inv, (-1,1,9), (-1,1,9), (-1,1,9))
         
     def test_no_disorder(self):
