@@ -8,6 +8,47 @@ from eryx.models import *
 from eryx.pdb import AtomicModel
 from eryx.map_utils import generate_grid
 
+class TestTransforms:
+    """
+    Check crystal and molecular transform calculations.
+    """
+    def setup_class(cls):
+        cls.pdb_path = "pdbs/5zck.pdb"
+        cls.pdb_path_p1 = "pdbs/5zck_p1.pdb"
+        cls.hsampling = (-4,4,1)
+        cls.ksampling = (-17,17,1)
+        cls.lsampling = (-29,29,1)
+
+    def test_molecular_transform(self):
+        """ Check molecular transform calculation. """
+        q_grid, I1 = compute_molecular_transform(self.pdb_path,
+                                                 self.hsampling,
+                                                 self.ksampling,
+                                                 self.lsampling,
+                                                 expand_p1=True)
+        q_grid, I2 = compute_molecular_transform(self.pdb_path_p1,
+                                                 self.hsampling,
+                                                 self.ksampling,
+                                                 self.lsampling,
+                                                 expand_p1=False)
+        assert np.allclose(I1, I2)
+
+    def test_crystal_transform(self):
+        """ Check crystal trnasform calculation. """
+        q_grid, I1 = compute_crystal_transform(self.pdb_path,
+                                               self.hsampling,
+                                               self.ksampling,
+                                               self.lsampling,
+                                               expand_p1=True)
+        q_grid, I2 = compute_crystal_transform(self.pdb_path_p1,
+                                               self.hsampling,
+                                               self.ksampling,
+                                               self.lsampling,
+                                               expand_p1=False)
+        # crystal transform is more sensitive to limited precision of pdb xyz
+        assert np.allclose(np.corrcoef(I1.flatten(), I2.flatten())[0,1], 1)
+        assert np.allclose(np.mean(np.abs(I1 - I2) / I2), 0, atol=0.01)
+        
 def test_compute_transform():
     """
     Check that crystal transform calculation from expanded asus and p1 match.
