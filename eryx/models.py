@@ -95,13 +95,13 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
 
 class TranslationalDisorder:
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, batch_size)
+        self._setup(pdb_path, expand_p1, batch_size)
         
-    def _setup(self, pdb_path, batch_size):
+    def _setup(self, pdb_path, expand_p1=True, batch_size=10000):
         """
         Set up class, including computing the molecular transform.
         
@@ -109,15 +109,17 @@ class TranslationalDisorder:
         ----------
         pdb_path : str
             path to coordinates file of asymmetric unit
+        expand_p1 : bool
+            if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
         batch_size : int
             number of q-vectors to evaluate per batch
         """
-        self.q_grid, self.transform = compute_transform('molecular', 
-                                                        pdb_path, 
-                                                        self.hsampling, 
-                                                        self.ksampling, 
-                                                        self.lsampling,
-                                                        batch_size=batch_size)
+        self.q_grid, self.transform = compute_molecular_transform(pdb_path, 
+                                                                  self.hsampling, 
+                                                                  self.ksampling, 
+                                                                  self.lsampling,
+                                                                  batch_size=batch_size,
+                                                                  expand_p1=expand_p1)
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         self.map_shape = self.transform.shape
     
@@ -190,13 +192,13 @@ class TranslationalDisorder:
 
 class LiquidLikeMotions:
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, border=1):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, border=1, expand_p1=True):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, batch_size, border)
+        self._setup(pdb_path, batch_size, border, expand_p1)
                 
-    def _setup(self, pdb_path, batch_size, border):
+    def _setup(self, pdb_path, batch_size, border, expand_p1):
         """
         Set up class, including calculation of the crystal transform.
         The transform can be evaluated to a higher resolution so that
@@ -210,14 +212,16 @@ class LiquidLikeMotions:
             number of q-vectors to evaluate per batch
         border : int
             number of border Miller indices along each direction 
+        expand_p1 : bool
+            if True, pdb corresponds to asymmetric unit; expand to unit cell
         """
         # compute crystal transform at integral Miller indices and dilate
-        self.q_grid_int, transform = compute_transform('crystal', 
-                                                       pdb_path, 
-                                                       (self.hsampling[0]-border, self.hsampling[1]+border, 1), 
-                                                       (self.ksampling[0]-border, self.ksampling[1]+border, 1), 
-                                                       (self.lsampling[0]-border, self.lsampling[1]+border, 1),
-                                                       batch_size=batch_size)
+        self.q_grid_int, transform = compute_crystal_transform(pdb_path, 
+                                                               (self.hsampling[0]-border, self.hsampling[1]+border, 1), 
+                                                               (self.ksampling[0]-border, self.ksampling[1]+border, 1), 
+                                                               (self.lsampling[0]-border, self.lsampling[1]+border, 1),
+                                                               batch_size=batch_size,
+                                                               expand_p1=expand_p1)
         self.transform = self._dilate(transform, (self.hsampling[2], self.ksampling[2], self.lsampling[2]))
         self.map_shape, self.map_shape_int = self.transform.shape, transform.shape
         

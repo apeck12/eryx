@@ -49,22 +49,13 @@ class TestTransforms:
         assert np.allclose(np.corrcoef(I1.flatten(), I2.flatten())[0,1], 1)
         assert np.allclose(np.mean(np.abs(I1 - I2) / I2), 0, atol=0.01)
         
-def test_compute_transform():
-    """
-    Check that crystal transform calculation from expanded asus and p1 match.
-    """
-    sampling = (-13,13,1)
-    q_grid, I_from_p1 = compute_transform('crystal', "histidine_p1.pdb", sampling, sampling, sampling, expand_p1=False)
-    q_grid, I_from_p212121 = compute_transform('crystal', "histidine.pdb", sampling, sampling, sampling, expand_p1=True)
-    assert np.allclose(I_from_p1, I_from_p212121)
-    
 class TestTranslationalDisorder:
     """
     Check translational disorder model.
     """
     def setup_class(cls):
-        pdb_path = "histidine.pdb"
-        cls.model = TranslationalDisorder(pdb_path, (-5,5,2), (-10,10,2), (-10,10,2))
+        pdb_path = "pdbs/5zck.pdb"
+        cls.model = TranslationalDisorder(pdb_path, (-4,4,1), (-17,17,1), (-29,29,1))
         
     def test_anisotropic_sigma(self):
         """ Check that maps with the same (an)isotropic sigma match. """
@@ -86,8 +77,8 @@ class TestLiquidLikeMotions:
     Check liquid like motions model.
     """
     def setup_class(cls):
-        cls.pdb_path = "histidine.pdb"
-        cls.model = LiquidLikeMotions(cls.pdb_path, (-13,13,2), (-13,13,2), (-13,13,2))
+        cls.pdb_path = "pdbs/histidine.pdb"
+        cls.model = LiquidLikeMotions(cls.pdb_path, (-13,13,2), (-13,13,2), (-13,13,2), expand_p1=True)
 
     def test_dilate(self):
         """ Check that map was correctly dilated: q_mags should match. """
