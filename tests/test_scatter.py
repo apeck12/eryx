@@ -43,7 +43,7 @@ class TestScatter(object):
         calc_x = gemmi.StructureFactorCalculatorX(structure.cell)
         sf_ref = np.array(calc_x.calculate_sf_from_model(structure[0], hkl))
         A_inv = np.array(structure.cell.fractionalization_matrix)
-        q_vec = 2*np.pi*np.inner(A_inv, np.array(hkl))
+        q_vec = 2*np.pi*np.inner(A_inv.T, np.array(hkl))
         sf = scatter.structure_factors(np.array([q_vec]), self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U=None)
         assert np.allclose(sf, sf_ref)
         

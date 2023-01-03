@@ -35,7 +35,7 @@ def generate_grid(A_inv, hsampling, ksampling, lsampling):
     hkl_grid = hkl_grid.T.reshape(-1,3)
     hkl_grid = hkl_grid[:, [2,1,0]]
     
-    q_grid = 2*np.pi*np.inner(A_inv, hkl_grid).T
+    q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T
     return q_grid, map_shape
 
 def visualize_central_slices(I, vmax_scale=5):
