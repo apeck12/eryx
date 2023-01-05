@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.signal
+import scipy.spatial
 from .pdb import AtomicModel
 from .map_utils import generate_grid, pearson_cc
 from .scatter import structure_factors
@@ -358,3 +359,174 @@ class LiquidLikeMotions:
 
         print(f"Optimal sigma: {self.opt_sigma}, optimal gamma: {self.opt_gamma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas, gammas
+
+class RotationalDisorder:
+    
+    """
+    Model of rigid body rotational disorder, in which all atoms in 
+    each asymmetric unit rotate as a rigid unit around a randomly 
+    oriented axis with a normally distributed rotation angle.
+    """
+    
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
+        self.hsampling = hsampling
+        self.ksampling = ksampling
+        self.lsampling = lsampling
+        self._setup(pdb_path, expand_p1)
+        self.batch_size = batch_size
+        
+    def _setup(self, pdb_path, expand_p1):
+        """
+        Compute q-vectors to evaluate.
+        
+        Parameters
+        ----------
+        pdb_path : str
+            path to coordinates file of asymmetric unit
+        expand_p1 : bool
+            if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
+        """
+        self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
+        self.q_grid, self.map_shape = generate_grid(self.model.A_inv, 
+                                                    self.hsampling, 
+                                                    self.ksampling, 
+                                                    self.lsampling)
+        self.q_mags = np.linalg.norm(self.q_grid, axis=1)
+    
+    @staticmethod
+    def axis_angle_to_quaternion(axis, theta):
+        """
+        Convert an angular rotation around an axis series to quaternions.
+
+        Parameters
+        ----------
+        axis : numpy.ndarray, size (num_pts, 3)
+            axis vector defining rotation
+        theta : numpy.ndarray, size (num_pts)
+            angle in radians defining anticlockwise rotation around axis
+
+        Returns
+        -------
+        quat : numpy.ndarray, size (num_pts, 4)
+            quaternions corresponding to axis/theta rotations
+        """
+        axis /= np.linalg.norm(axis, axis=1)[:,None]
+        angle = theta / 2
+
+        quat = np.zeros((len(theta), 4))
+        quat[:,0] = np.cos(angle)
+        quat[:,1:] = np.sin(angle)[:,None] * axis
+
+        return quat
+
+    @staticmethod
+    def generate_rotations_around_axis(sigma, num_rot, axis=np.array([0,0,1.0])):
+        """
+        Generate uniform random rotations about an axis.
+
+        Parameters
+        ----------
+        sigma : float
+            standard deviation of angular sampling around axis in degrees
+        num_rot : int
+            number of rotations to generate
+        axis : numpy.ndarray, shape (3,)
+            axis about which to generate rotations
+
+        Returns
+        -------
+        rot_mat : numpy.ndarray, shape (num, 3, 3)
+            rotation matrices
+        """
+        axis /= np.linalg.norm(axis)
+        random_R = scipy.spatial.transform.Rotation.random(num_rot).as_matrix()
+        random_ax = np.inner(random_R, np.array([0,0,1.0]))
+        thetas = np.deg2rad(sigma) * np.random.randn(num_rot)
+        rot_vec = thetas[:,np.newaxis] * random_ax
+        rot_mat = scipy.spatial.transform.Rotation.from_rotvec(rot_vec).as_matrix()
+        return rot_mat
+    
+    def apply_disorder(self, sigmas, num_rot=100):
+        """
+        Compute the diffuse maps(s) resulting from rotational disorder for 
+        the given sigmas by applying Guinier's equation to an ensemble of 
+        rotated molecules, and then taking the incoherent sum of all of the
+        asymmetric units.
+        
+        Parameters
+        ----------
+        sigmas : float or array of shape (n_sigma,) 
+            standard deviation(s) of angular sampling in degrees
+        num_rot : int
+            number of rotations to generate per sigma
+        
+        Returns
+        -------
+        Id : numpy.ndarray, (n_sigma, q_grid.shape[0])
+            diffuse intensity maps for the corresponding parameters
+        """
+        if type(sigmas) == float or type(sigmas) == int:
+            sigmas = np.array([sigmas])
+            
+        Id = np.zeros((len(sigmas), self.q_grid.shape[0]))
+        for n_sigma,sigma in enumerate(sigmas):
+            for asu in range(self.model.n_asu):
+                # rotate atomic coordinates
+                rot_mat = self.generate_rotations_around_axis(sigma, num_rot)
+                com = np.mean(self.model.xyz[asu], axis=0)
+                xyz_rot = np.matmul(self.model.xyz[asu] - com, rot_mat) 
+                xyz_rot += com
+                
+                # apply Guinier's equation to rotated ensemble
+                fc = np.zeros(self.q_grid.shape[0], dtype=complex)
+                fc_square = np.zeros(self.q_grid.shape[0])
+                for rnum in range(num_rot):
+                    A = structure_factors(self.q_grid, 
+                                          xyz_rot[rnum], 
+                                          self.model.ff_a[asu], 
+                                          self.model.ff_b[asu], 
+                                          self.model.ff_c[asu], 
+                                          U=None, 
+                                          batch_size=10000)
+                    fc += A
+                    fc_square += np.square(np.abs(A)) 
+                Id[n_sigma] += fc_square / num_rot - np.square(np.abs(fc / num_rot))
+
+        return Id 
+    
+    def optimize(self, target, sigma_min, sigma_max, n_search=20, num_rot=100):
+        """
+        Scan to find the sigma that maximizes the overall Pearson
+        correlation between the target and computed maps. 
+        
+        Parameters
+        ----------
+        target : numpy.ndarray, 3d
+            target map, of shape self.map_shape
+        sigma_min : float 
+            lower bound of sigma
+        sigma_max : float 
+            upper bound of sigma
+        n_search : int
+            sampling frequency between sigma_min and sigma_max
+        num_rot : int
+            number of rotations to generate per sigma
+        
+        Returns
+        -------
+        ccs : numpy.ndarray, shape (n_search,)
+            Pearson correlation coefficients to target maps
+        sigmas : numpy.ndarray, shape (n_search,) or (n_search, n_search, n_search)
+            sigmas that were scanned over, ordered as ccs
+        """
+        assert target.shape == self.map_shape
+        
+        sigmas = np.linspace(sigma_min, sigma_max, n_search)        
+        Id = self.apply_disorder(sigmas, num_rot)
+        ccs = pearson_cc(Id, np.expand_dims(target.flatten(), axis=0))
+        opt_index = np.argmax(ccs)
+        self.opt_sigma = sigmas[opt_index]
+        self.opt_map = Id[opt_index].reshape(self.map_shape)
+
+        print(f"Optimal sigma: {self.opt_sigma}, with correlation coefficient {ccs[opt_index]:.4f}")
+        return ccs, sigmas
