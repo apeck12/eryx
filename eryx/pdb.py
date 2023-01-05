@@ -163,6 +163,7 @@ class AtomicModel:
         if len(transformations) == 0:
             transformations = sym_ops
 
+        self.n_asu = len(transformations)
         return sym_ops, transformations
     
     def extract_frame(self, expand_p1=False, frame=0):
@@ -186,7 +187,8 @@ class AtomicModel:
             frange = range(len(self.structure))
         else:
             frange = [frame]
-                    
+        self.n_conf = len(frange)
+            
         for fr in frange:
             model = self.structure[fr]
             residues = [res for ch in model for res in ch]
