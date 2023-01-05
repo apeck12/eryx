@@ -108,3 +108,18 @@ class TestLiquidLikeMotions:
         ccs, sigmas, gammas = self.model.optimize(target, 0.05, 0.45, 0.5, 3.5, ns_search=6, ng_search=6)
         assert gammas[np.argmin(np.abs(gammas - g))] == self.model.opt_gamma
         assert sigmas[np.argmin(np.abs(sigmas - s))] == self.model.opt_sigma
+
+class TestRotationalDisorder:
+    """
+    Check the rotational disorder model.
+    """
+    def setup_class(cls):
+        pdb_path = "pdbs/2ol9.pdb"
+        cls.model = RotationalDisorder(pdb_path, (-14,14,1), (-5,5,1), (-15,15,1))
+
+    def test_optimize(self):
+        """ Check that optimization identifies the correct sigma. """
+        param = float(np.random.choice(np.linspace(1.0,3.0,3)))
+        target = self.model.apply_disorder(param)[0].reshape(self.model.map_shape)
+        self.model.optimize(target, 1.0, 3.0, n_search=3)
+        assert self.model.opt_sigma == param
