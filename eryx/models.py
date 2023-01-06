@@ -530,3 +530,84 @@ class RotationalDisorder:
 
         print(f"Optimal sigma: {self.opt_sigma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas
+
+class EnsembleDisorder:
+    
+    """
+    Model of ensemble disorder, in which the components of the
+    asymmetric unit populate distinct biological states.
+    """
+    
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
+        self.hsampling = hsampling
+        self.ksampling = ksampling
+        self.lsampling = lsampling
+        self._setup(pdb_path, expand_p1)
+        self.batch_size = batch_size
+        
+    def _setup(self, pdb_path, expand_p1):
+        """
+        Compute q-vectors to evaluate.
+        
+        Parameters
+        ----------
+        pdb_path : str
+            path to coordinates file of asymmetric unit
+        expand_p1 : bool
+            if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
+        """
+        self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
+        self.q_grid, self.map_shape = generate_grid(self.model.A_inv, 
+                                                    self.hsampling, 
+                                                    self.ksampling, 
+                                                    self.lsampling)
+        self.q_mags = np.linalg.norm(self.q_grid, axis=1)
+        
+    def apply_disorder(self, weights=None):
+        """
+        Compute the diffuse maps(s) resulting from ensemble disorder using
+        Guinier's equation, and then taking the incoherent sum of all the
+        asymmetric units. 
+        
+        Parameters
+        ----------
+        weights : shape (n_sets, n_conf) 
+            set(s) of probabilities associated with each conformation
+
+        Returns
+        -------
+        Id : numpy.ndarray, (n_sets, q_grid.shape[0])
+            diffuse intensity map for the corresponding parameters
+        """
+        if weights is None:
+            weights = 1.0 / self.model.n_conf * np.array([np.ones(self.model.n_conf)])
+        if len(weights.shape) == 1:
+            weights = np.array([weights])
+        if weights.shape[1] != self.model.n_conf:
+            raise ValueError("Second dimension of weights must match number of conformations.")
+            
+        n_maps = weights.shape[0]
+        Id = np.zeros((weights.shape[0], self.q_grid.shape[0]))
+
+        for asu in range(self.model.n_asu):
+
+            fc = np.zeros((weights.shape[0], self.q_grid.shape[0]), dtype=complex)
+            fc_square = np.zeros((weights.shape[0], self.q_grid.shape[0]))
+
+            for conf in range(self.model.n_conf):
+                index = conf * self.model.n_asu + asu
+                A = structure_factors(self.q_grid, 
+                                      self.model.xyz[index], 
+                                      self.model.ff_a[index], 
+                                      self.model.ff_b[index], 
+                                      self.model.ff_c[index], 
+                                      U=None, 
+                                      batch_size=10000)
+                for nm in range(n_maps):
+                    fc[nm] += A * weights[nm][conf]
+                    fc_square[nm] += np.square(np.abs(A)) * weights[nm][conf]
+
+            for nm in range(n_maps):
+                Id[nm] += fc_square[nm] - np.square(np.abs(fc[nm]))
+                
+        return Id
