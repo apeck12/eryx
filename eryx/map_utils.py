@@ -38,6 +38,75 @@ def generate_grid(A_inv, hsampling, ksampling, lsampling):
     q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T
     return q_grid, map_shape
 
+def cos_sq(angles):
+    """ Compute cosine squared of input angles in radians. """
+    return np.square(np.cos(angles))
+
+def sin_sq(angles):
+    """ Compute sine squared of input angles in radianss. """
+    return np.square(np.sin(angles))
+
+def compute_resolution(cell, hkl):
+    """
+    Compute reflections' resolution in 1/Angstrom. To check, see: 
+    https://www.ruppweb.org/new_comp/reciprocal_cell.htm.
+        
+    Parameters
+    ----------
+    cell : numpy.ndarray, shape (6,)
+        unit cell parameters (a,b,c,alpha,beta,gamma) in Ang/deg
+    hkl : numpy.ndarray, shape (n_refl, 3)
+        Miller indices of reflections
+            
+    Returns
+    -------
+    resolution : numpy.ndarray, shape (n_refl)
+        resolution associated with each reflection in Angstrom
+    """
+
+    a,b,c = [cell[i] for i in range(3)] 
+    alpha,beta,gamma = [np.radians(cell[i]) for i in range(3,6)] 
+    h,k,l = [hkl[:,i] for i in range(3)]
+
+    pf = 1.0 - cos_sq(alpha) - cos_sq(beta) - cos_sq(gamma) + 2.0*np.cos(alpha)*np.cos(beta)*np.cos(gamma)
+    n1 = np.square(h)*sin_sq(alpha)/np.square(a) + np.square(k)*sin_sq(beta)/np.square(b) + np.square(l)*sin_sq(gamma)/np.square(c)
+    n2a = 2.0*k*l*(np.cos(beta)*np.cos(gamma) - np.cos(alpha))/(b*c)
+    n2b = 2.0*l*h*(np.cos(gamma)*np.cos(alpha) - np.cos(beta))/(c*a)
+    n2c = 2.0*h*k*(np.cos(alpha)*np.cos(beta) - np.cos(gamma))/(a*b)
+
+    return 1.0 / np.sqrt((n1 + n2a + n2b + n2c) / pf)
+
+def get_hkl_extents(cell, resolution, oversampling=1):
+    """
+    Determine the min/max hkl for the given cell and resolution.
+    
+    Parameters
+    ----------
+    cell : numpy.ndarray, shape (6,)
+        unit cell parameters in Angstrom / degrees
+    resolution : float
+        high-resolution limit
+    oversampling : int or tuple of shape (3,)
+        oversampling rate relative to integral Miller indices
+    
+    Returns
+    -------
+    hsampling : tuple, shape (3,)
+        (min, max, interval) along h axis
+    ksampling : tuple, shape (3,)
+        (min, max, interval) along k axis
+    lsampling : tuple, shape (3,)
+        (min, max, interval) along l axis        
+    """
+    import gemmi
+    
+    if type(oversampling) == int:
+        oversampling = 3 * [oversampling]
+
+    g_cell = gemmi.UnitCell(*cell)
+    h,k,l = g_cell.get_hkl_limits(resolution)
+    return (-h,h,oversampling[0]), (-k,k,oversampling[1]), (-l,l,oversampling[2])
+
 def visualize_central_slices(I, vmax_scale=5):
     """
     Plot input map's central slices, assuming that map
