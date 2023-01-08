@@ -93,7 +93,7 @@ def get_ravel_indices(hkl_grid_sym, sampling):
     hkl_grid_int = hkl_grid_int.reshape(hkl_grid_sym.shape)
     
     ravel = np.zeros(hkl_grid_sym.shape[:2]).astype(int)
-    for i in range(model.n_asu):
+    for i in range(ravel.shape[0]):
         ravel[i] = np.ravel_multi_index((hkl_grid_int[i] - lbounds).T, map_shape_ravel)
 
     return ravel
