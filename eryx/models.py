@@ -2,15 +2,14 @@ import numpy as np
 import scipy.signal
 import scipy.spatial
 from .pdb import AtomicModel
-from .map_utils import generate_grid, pearson_cc
+from .map_utils import *
 from .scatter import structure_factors
 
 def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000, expand_p1=True):
     """
-    Compute the molecular transform as the incoherent sum
-    of the asymmetric units. If expand_p1 is False, it is
-    assumed that the pdb contains the asymmetric units as
-    separate frames / models.
+    Compute the crystal transform as the coherent sum of the
+    asymmetric units. If expand_p1 is False, it is assumed 
+    that the pdb contains asymmetric units as separate frames.
     
     Parameters
     ----------
@@ -49,7 +48,7 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
                                            batch_size=batch_size)))
     return q_grid, I.reshape(map_shape)
 
-def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000, expand_p1=True):
+def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000, expand_p1=True, symmetrize='reciprocal'):
     """
     Compute the molecular transform as the incoherent sum
     of the asymmetric units. If expand_p1 is False, it is
@@ -72,6 +71,8 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
         number of q-vectors to evaluate per batch
     expand_p1 : bool
         if True, expand PDB (asymmetric unit) to unit cell
+    symmetrize : str
+        symmetrization mode, either real or reciprocal
         
     Returns
     -------
@@ -80,19 +81,87 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
     I : numpy.ndarray, 3d
         intensity map of the molecular transform
     """
-    model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
-    q_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling)
+    if symmetrize == 'real':
+        model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
+        q_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling)
     
-    I = np.zeros(q_grid.shape[0])
-    for asu in range(model.xyz.shape[0]):
-        I += np.square(np.abs(structure_factors(q_grid, 
-                                                model.xyz[asu], 
-                                                model.ff_a[asu], 
-                                                model.ff_b[asu], 
-                                                model.ff_c[asu], 
-                                                U=U, 
-                                                batch_size=batch_size)))
+        I = np.zeros(q_grid.shape[0])
+        for asu in range(model.xyz.shape[0]):
+            I += np.square(np.abs(structure_factors(q_grid,
+                                                    model.xyz[asu],
+                                                    model.ff_a[asu], 
+                                                    model.ff_b[asu], 
+                                                    model.ff_c[asu], 
+                                                    U=U, 
+                                                    batch_size=batch_size)))
+    elif symmetrize == 'reciprocal':
+        model = AtomicModel(pdb_path, expand_p1=False, frame=0)
+        q_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling)
+        I = incoherent_from_reciprocal(model, hsampling, ksampling, lsampling, U=U, batch_size=batch_size)
+
+    else: 
+        raise ValueError("Symmetrize must be real or reciprocal")
+        
     return q_grid, I.reshape(map_shape)
+
+def incoherent_from_reciprocal(model, hsampling, ksampling, lsampling, U=None, batch_size=10000):
+    """
+    Compute intensities as the incoherent sum of the scattering
+    from asymmetric units by symmetrizing in reciprocal space.
+    This reduces the number of q-vectors to evaluate by up to the
+    number of asymmetric units. The strategy is to determine each
+    reflection's set of symmetry-equivalents, map these 3d vectors
+    to 1d space by raveling, and then computing the intensity only
+    for hkl grid points that haven't already been processed. 
+    
+    Parameters
+    ----------
+    model : AtomicModel 
+        instance of AtomicModel class
+    hsampling : tuple, shape (3,)
+        (min, max, interval) along h axis
+    ksampling : tuple, shape (3,)
+        (min, max, interval) along k axis
+    lsampling : tuple, shape (3,)
+        (min, max, interval) along l axis        
+    U : numpy.ndarray, shape (n_atoms,)
+        isotropic displacement parameters, applied to each asymmetric unit
+    batch_size : int
+        number of q-vectors to evaluate per batch
+
+    Returns
+    -------
+    I : numpy.ndarray, 3d
+        symmetrized intensity map
+    """
+    hkl_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
+    hkl_grid_sym = get_symmetry_equivalents(hkl_grid, model.sym_ops)
+    ravel = get_ravel_indices(hkl_grid_sym, (hsampling[2], ksampling[2], lsampling[2]))
+    
+    I_sym = np.zeros(ravel.shape)
+    for asu in range(I_sym.shape[0]):
+        q_asu = 2*np.pi*np.inner(model.A_inv.T, hkl_grid_sym[asu]).T
+        if asu == 0:
+            I_sym[asu] = np.square(np.abs(structure_factors(q_asu,
+                                                            model.xyz[0],
+                                                            model.ff_a[0],
+                                                            model.ff_b[0],
+                                                            model.ff_c[0],
+                                                            U=U,
+                                                            batch_size=batch_size)))
+        else:
+            intersect1d, comm1, comm2 = np.intersect1d(ravel[0], ravel[asu], return_indices=True)
+            I_sym[asu][comm2] = I_sym[0][comm1]
+            comm3 = np.arange(len(ravel[asu]))[~np.in1d(ravel[asu],ravel[0])]
+            I_sym[asu][comm3] = np.square(np.abs(structure_factors(q_asu[comm3],
+                                                                   model.xyz[0],
+                                                                   model.ff_a[0],
+                                                                   model.ff_b[0],
+                                                                   model.ff_c[0],
+                                                                   U=U,
+                                                                   batch_size=batch_size)))
+    I = np.sum(I_sym, axis=0).reshape(map_shape)
+    return I
 
 class TranslationalDisorder:
     
