@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def generate_grid(A_inv, hsampling, ksampling, lsampling):
+def generate_grid(A_inv, hsampling, ksampling, lsampling, return_hkl=False):
     """
     Generate a grid of q-vectors based on the desired extents 
     and spacing in hkl space.
@@ -16,6 +16,8 @@ def generate_grid(A_inv, hsampling, ksampling, lsampling):
         (kmin, kmax, oversampling relative to Miller indices)
     lsampling : tuple, shape (3,)
         (lmin, lmax, oversampling relative to Miller indices)
+    return_hkl : bool
+        if True, return hkl indices rather than q-vectors
     
     Returns
     -------
@@ -35,8 +37,66 @@ def generate_grid(A_inv, hsampling, ksampling, lsampling):
     hkl_grid = hkl_grid.T.reshape(-1,3)
     hkl_grid = hkl_grid[:, [2,1,0]]
     
-    q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T
-    return q_grid, map_shape
+    if return_hkl:
+        return hkl_grid, map_shape
+    else:
+        q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T
+        return q_grid, map_shape
+
+def get_symmetry_equivalents(hkl_grid, sym_ops):
+    """
+    Get symmetry equivalent Miller indices of input hkl_grid.
+    The symmetry-equivalents are stacked horizontally, so that
+    the first dimension of the output array corresponds to the
+    nth asymmetric unit.
+    
+    Parameters
+    ----------
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        hkl indices corresponding to flattened intensity map
+    sym_ops : dict
+        rotational symmetry operations as 3x3 arrays
+        
+    Returns
+    -------
+    hkl_grid_sym : numpy.ndarray, shape (n_asu, n_points, 3)
+        stacked hkl indices of symmetry-equivalents
+    """
+    hkl_grid_sym = np.empty(3)
+    for i,rot in sym_ops.items():
+        hkl_grid_rot = np.matmul(hkl_grid, rot)
+        hkl_grid_sym = np.vstack((hkl_grid_sym, hkl_grid_rot))
+    hkl_grid_sym = hkl_grid_sym[1:]
+    return hkl_grid_sym.reshape(len(sym_ops), hkl_grid.shape[0], 3)
+    
+def get_ravel_indices(hkl_grid_sym, sampling):
+    """
+    Map 3d hkl indices to corresponding 1d indices after raveling.
+    
+    Parameters
+    ----------
+    hkl_grid_sym : numpy.ndarray, shape (n_asu, n_points, 3)
+        stacked hkl indices of symmetry-equivalents
+    sampling : tuple, shape (3,)
+        sampling rate relative to integral Millers along (h,k,l)
+    
+    Returns
+    -------
+    ravel : numpy.ndarray, shape (n_asu, n_points)
+        indices in raveled space for hkl_grid_sym
+    """
+    hkl_grid_stacked = hkl_grid_sym.reshape(-1, hkl_grid_sym.shape[-1])
+    hkl_grid_int = np.around(hkl_grid_stacked * np.array(sampling)).astype(int)
+    lbounds = np.min(hkl_grid_int, axis=0)
+    ubounds = np.max(hkl_grid_int, axis=0)
+    map_shape_ravel = tuple((ubounds - lbounds + 1)) 
+    hkl_grid_int = hkl_grid_int.reshape(hkl_grid_sym.shape)
+    
+    ravel = np.zeros(hkl_grid_sym.shape[:2]).astype(int)
+    for i in range(model.n_asu):
+        ravel[i] = np.ravel_multi_index((hkl_grid_int[i] - lbounds).T, map_shape_ravel)
+
+    return ravel
 
 def cos_sq(angles):
     """ Compute cosine squared of input angles in radians. """
