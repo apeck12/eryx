@@ -25,13 +25,22 @@ class TestTransforms:
                                                  self.hsampling,
                                                  self.ksampling,
                                                  self.lsampling,
-                                                 expand_p1=True)
+                                                 expand_p1=True,
+                                                 symmetrize='real')
         q_grid, I2 = compute_molecular_transform(self.pdb_path_p1,
                                                  self.hsampling,
                                                  self.ksampling,
                                                  self.lsampling,
-                                                 expand_p1=False)
+                                                 expand_p1=False,
+                                                 symmetrize='real')
+        q_grid, I3 = compute_molecular_transform(self.pdb_path_p1,
+                                                 self.hsampling,
+                                                 self.ksampling,
+                                                 self.lsampling,
+                                                 expand_p1=False,
+                                                 symmetrize='reciprocal')
         assert np.allclose(I1, I2)
+        assert np.allclose(I1, I3)
 
     def test_crystal_transform(self):
         """ Check crystal trnasform calculation. """
