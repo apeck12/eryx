@@ -4,6 +4,7 @@ import scipy.spatial
 from .pdb import AtomicModel
 from .map_utils import *
 from .scatter import structure_factors
+from .stats import pearson_cc
 
 def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000, expand_p1=True):
     """
