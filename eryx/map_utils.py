@@ -20,8 +20,8 @@ def generate_grid(A_inv, hsampling, ksampling, lsampling, return_hkl=False):
     
     Returns
     -------
-    q_grid : numpy.ndarray, shape (n_points, 3)
-        grid of q-vectors
+    q_grid or hkl_grid : numpy.ndarray, shape (n_points, 3)
+        grid of q-vectors or hkl indices
     map_shape : tuple, shape (3,)
         shape of 3d map
     """
@@ -166,3 +166,50 @@ def get_hkl_extents(cell, resolution, oversampling=1):
     h,k,l = g_cell.get_hkl_limits(resolution)
     return (-h,h,oversampling[0]), (-k,k,oversampling[1]), (-l,l,oversampling[2])
 
+def expand_sym_ops(sym_ops):
+    """
+    Expand symmetry operations to include Friedel equivalents.
+    
+    Parameters
+    ----------
+    sym_ops : dict
+        rotational symmetry operations as 3x3 matrices
+    
+    Returns
+    -------
+    sym_ops_exp : dict
+        sym_ops, expanded to account for Friedel symmetry
+    """
+    sym_ops_exp = dict(sym_ops)
+    for key in sym_ops:
+        sym_ops_exp[key + len(sym_ops)] = -1 * sym_ops[key]
+    return sym_ops_exp
+
+def compute_multiplicity(model, hsampling, ksampling, lsampling):
+    """
+    Compute the multiplicity of each voxel in the map.
+    
+    Parameters
+    ----------
+    model : AtomicModel 
+        instance of AtomicModel class
+    hsampling : tuple, shape (3,)
+        (min, max, interval) along h axis
+    ksampling : tuple, shape (3,)
+        (min, max, interval) along k axis
+    lsampling : tuple, shape (3,)
+        (min, max, interval) along l axis        
+    
+    Returns
+    -------
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        grid of hkl vectors
+    multiplicity : numpy.ndarray, 3d
+        multiplicity of each grid point in the map
+    """
+    sym_ops_exp = expand_sym_ops(model.sym_ops)
+    hkl_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
+    hkl_sym = get_symmetry_equivalents(hkl_grid, sym_ops_exp)
+    ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2])).T
+    multiplicity = (np.diff(np.sort(ravel,axis=1),axis=1)!=0).sum(axis=1)+1
+    return hkl_grid, multiplicity.reshape(map_shape)
