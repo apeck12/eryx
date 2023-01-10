@@ -46,6 +46,8 @@ def compute_cc_by_shell(arr1, arr2, res_map, mask=None, n_shells=10):
         input array
     arr2 : numpy.ndarray, shape (n_points,) 
         input array to compute CC with
+    res_map : numpy.ndarray, shape (n_points,) 
+        resolution in Angstrom of each reciprocal grid point
     mask : numpy.ndarray, shape (map_shape) or (n_points,)
         e.g. to select asu/resolution. True values indicate retained grid points
     n_shells : int
@@ -75,3 +77,39 @@ def compute_cc_by_shell(arr1, arr2, res_map, mask=None, n_shells=10):
         res_shell[i-1] = np.median(res_map[ind==i])
         
     return res_shell, cc_shell
+
+def compute_cc_by_dq(arr1, arr2, dq_map, mask=None):
+    """
+    Compute the Pearson correlation coefficient as a function of dq, the
+    distance between reciprocal grid points and the nearest Bragg peak.
+    
+    Parameters
+    ----------
+    arr1 : numpy.ndarray, shape (n_points,)
+        input array
+    arr2 : numpy.ndarray, shape (n_points,) 
+        input array to compute CC with
+    dq_map : numpy.ndarray, shape (n_points,)
+        distance of each grid point to 
+    mask : numpy.ndarray, shape (map_shape) or (n_points,)
+        e.g. to select asu/resolution. True values indicate retained grid points
+    
+    Returns
+    -------
+    dq_vals : numpy.ndarray, shape (n_unique_dq,)
+        unique distances from the nearest Bragg peak
+    cc_dq : numpy.ndarray, shape (n_shells,)
+        correlation coefficient by resolution shell
+    """
+    arr1, arr2 = arr1.flatten(), arr2.flatten()
+    if mask is None:
+        mask = np.ones(res_map.shape).astype(bool)
+    mask *= ~np.isnan(np.sum(np.vstack((arr1, arr2)), axis=0))
+    
+    dq_vals = np.unique(dq_map)
+    cc_dq = np.zeros(len(dq_vals))
+    for i,dq in enumerate(dq_vals):
+        arr1_sel, arr2_sel, mask_sel = arr1[dq_map==dq], arr2[dq_map==dq], mask[dq_map==dq]
+        cc_dq[i] = compute_cc(arr1_sel, arr2_sel, mask=mask_sel)[0]
+    
+    return dq_vals, cc_dq
