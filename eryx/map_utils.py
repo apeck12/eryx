@@ -1,4 +1,5 @@
 import numpy as np
+import gemmi
 
 def generate_grid(A_inv, hsampling, ksampling, lsampling, return_hkl=False):
     """
@@ -157,11 +158,8 @@ def get_hkl_extents(cell, resolution, oversampling=1):
     lsampling : tuple, shape (3,)
         (min, max, interval) along l axis        
     """
-    import gemmi
-    
     if type(oversampling) == int:
         oversampling = 3 * [oversampling]
-
     g_cell = gemmi.UnitCell(*cell)
     h,k,l = g_cell.get_hkl_limits(resolution)
     return (-h,h,oversampling[0]), (-k,k,oversampling[1]), (-l,l,oversampling[2])
@@ -213,3 +211,63 @@ def compute_multiplicity(model, hsampling, ksampling, lsampling):
     ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2])).T
     multiplicity = (np.diff(np.sort(ravel,axis=1),axis=1)!=0).sum(axis=1)+1
     return hkl_grid, multiplicity.reshape(map_shape)
+
+def parse_asu_condition(asu_condition):
+    """
+    Parse Gemmi's string describing which reflections belong to the 
+    asymmetric unit into a string compatible with python's eval.
+    
+    Parameters
+    ----------
+    asu_condition : str
+        Gemmi-style string describing asu
+        
+    Returns
+    -------
+    asu_condition : str
+        eval-compatible string describing asu
+    """
+    # convert to numpy boolean operators
+    find = ["=", "and", "or", ">==", "<=="] 
+    replace = ["==", "&", "|", ">=", "<="]
+    for i,j in zip(find, replace):
+        asu_condition = asu_condition.replace(i,j)
+        
+    # add missing parenthesis around individual conditions
+    alphas = [idx for idx in range(len(asu_condition)) if (asu_condition[idx].isalpha() and asu_condition[idx+1] not in [" ", ")", "("])]
+    counter = 0
+    for start in alphas:
+        asu_condition = asu_condition[:start+counter] + "(" + asu_condition[start+counter:]
+        counter += 1
+        end = asu_condition.find(" ", start+counter)
+        if end == -1:
+            asu_condition = asu_condition + ")"
+        else:
+            asu_condition = asu_condition[:end] + ")" + asu_condition[end:]
+        counter += 1
+    
+    return asu_condition
+
+def get_asu_mask(space_group, hkl_grid):
+    """
+    Generate a boolean mask that indicates which hkl indices belong
+    to the asymmetric unit.
+    
+    Parameters
+    ----------
+    space_group : int or str
+        crystal's space group
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        hkl indices 
+        
+    Returns
+    -------
+    asu_mask : numpy.ndarray, shape (n_points,)
+        True indicates hkls that belong to the asymmetric unit
+    """
+    sg = gemmi.SpaceGroup(space_group)
+    asu_condition = gemmi.ReciprocalAsu(sg).condition_str()
+    asu_condition = parse_asu_condition(asu_condition)
+    h, k, l = [hkl_grid[:,i] for i in range(3)]
+    asu_mask = eval(asu_condition)
+    return asu_mask
