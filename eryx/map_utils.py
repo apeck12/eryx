@@ -271,3 +271,26 @@ def get_asu_mask(space_group, hkl_grid):
     h, k, l = [hkl_grid[:,i] for i in range(3)]
     asu_mask = eval(asu_condition)
     return asu_mask
+
+def get_resolution_mask(cell, hkl_grid, res_limit):
+    """
+    Generate a boolean mask that indicates which hkl indices belong
+    to the asymmetric unit.
+    
+    Parameters
+    ----------
+    space_group : int or str
+        crystal's space group
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        hkl indices 
+    res_limit : float
+        high resolution limit in Angstrom
+        
+    Returns
+    -------
+    res_mask : numpy.ndarray, shape (n_points,)
+        True indicates hkls that are within high resolution limit
+    """
+    res_map = compute_resolution(cell, hkl_grid)
+    res_mask = res_map > res_limit
+    return res_mask
