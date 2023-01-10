@@ -29,9 +29,9 @@ def setup_model(case):
         pdb_path = "pdbs/2ol9.pdb"
         
     elif case == 'tetragonal':
-        hsampling = (-30, 30, 1)
-        ksampling = (-30, 30, 1)
-        lsampling = (-16, 16, 1)
+        hsampling = (-30, 30, 2)
+        ksampling = (-30, 30, 2)
+        lsampling = (-16, 16, 2)
         pdb_path = "pdbs/193l.pdb"   
 
     else:
@@ -67,3 +67,19 @@ def test_get_asu_mask():
 
         asu = gemmi.ReciprocalAsu(gemmi.SpaceGroup(model.space_group))
         assert all([asu.is_in(list(h)) for h in hkl_asu])
+
+def test_get_dq_map():
+    """ Check that the unique dq match their expected values. """
+    for case in ['orthorhombic', 'tetragonal']:
+        model, hsampling, ksampling, lsampling = setup_model(case)
+        hkl_grid, map_shape = map_utils.generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
+        dq_calc = np.unique(map_utils.get_dq_map(model.A_inv, hkl_grid))
+        dq_exp = 2*np.pi*np.linalg.norm(model.A_inv.T, axis=0) 
+        dq_exp /= np.array([hsampling[2], ksampling[2], lsampling[2]])
+        dq_exp = np.append(dq_exp, np.array([np.sqrt(np.square(dq_exp[0]) + np.square(dq_exp[1])), 
+                                             np.sqrt(np.square(dq_exp[0]) + np.square(dq_exp[2])),
+                                             np.sqrt(np.square(dq_exp[1]) + np.square(dq_exp[2])),
+                                             np.sqrt(np.sum(np.square(dq_exp)))]))
+        dq_exp = np.append(np.zeros(1), dq_exp)
+        dq_exp = np.unique(np.around(dq_exp, decimals=8))
+        assert np.allclose(dq_exp, dq_calc)

@@ -296,3 +296,26 @@ def get_resolution_mask(cell, hkl_grid, res_limit):
     res_map = compute_resolution(cell, hkl_grid)
     res_mask = res_map > res_limit
     return res_mask, res_map
+
+def get_dq_map(A_inv, hkl_grid):
+    """
+    Compute dq, the distance to the nearest Bragg peak, for 
+    each reciprocal grid point.
+    
+    Parameters
+    ----------
+    A_inv : numpy.ndarray, shape (3,3)
+        fractional cell orthogonalization matrix
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        grid of hkl indices
+    
+    Returns
+    -------
+    dq : numpy.ndarray, shape (n_points,)
+        distance to the nearest Bragg peak
+    """
+    hkl_closest = np.around(hkl_grid)
+    q_closest = 2*np.pi*np.inner(A_inv.T, hkl_closest).T 
+    q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T 
+    dq = np.linalg.norm(np.abs(q_closest - q_grid), axis=1)
+    return np.around(dq, decimals=8)
