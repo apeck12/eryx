@@ -1,5 +1,5 @@
-import matplotlib.pyplot as plt
 import numpy as np
+import gemmi
 
 def generate_grid(A_inv, hsampling, ksampling, lsampling, return_hkl=False):
     """
@@ -21,8 +21,8 @@ def generate_grid(A_inv, hsampling, ksampling, lsampling, return_hkl=False):
     
     Returns
     -------
-    q_grid : numpy.ndarray, shape (n_points, 3)
-        grid of q-vectors
+    q_grid or hkl_grid : numpy.ndarray, shape (n_points, 3)
+        grid of q-vectors or hkl indices
     map_shape : tuple, shape (3,)
         shape of 3d map
     """
@@ -158,68 +158,164 @@ def get_hkl_extents(cell, resolution, oversampling=1):
     lsampling : tuple, shape (3,)
         (min, max, interval) along l axis        
     """
-    import gemmi
-    
     if type(oversampling) == int:
         oversampling = 3 * [oversampling]
-
     g_cell = gemmi.UnitCell(*cell)
     h,k,l = g_cell.get_hkl_limits(resolution)
     return (-h,h,oversampling[0]), (-k,k,oversampling[1]), (-l,l,oversampling[2])
 
-def visualize_central_slices(I, vmax_scale=5):
+def expand_sym_ops(sym_ops):
     """
-    Plot input map's central slices, assuming that map
-    is centered around h,k,l=(0,0,0).
-
-    Parameters
-    ----------
-    I : numpy.ndarray, 3d
-        intensity map
-    vmax_scale : float
-        vmax will be vmax_scale*mean(I)
-    """
-    f, (ax1,ax2,ax3) = plt.subplots(1, 3, figsize=(12,4))
-    map_shape = I.shape
-    
-    ax1.imshow(I[int(map_shape[0]/2),:,:], vmax=I.mean()*vmax_scale)
-    ax2.imshow(I[:,int(map_shape[1]/2),:], vmax=I.mean()*vmax_scale)
-    ax3.imshow(I[:,:,int(map_shape[2]/2)], vmax=I.mean()*vmax_scale)
-
-    ax1.set_aspect(map_shape[2]/map_shape[1])
-    ax2.set_aspect(map_shape[2]/map_shape[0])
-    ax3.set_aspect(map_shape[1]/map_shape[0])
-
-    ax1.set_title("(0,k,l)", fontsize=14)
-    ax2.set_title("(h,0,l)", fontsize=14)
-    ax3.set_title("(h,k,0)", fontsize=14)
-
-    for ax in [ax1,ax2,ax3]:
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-def pearson_cc(arr1, arr2):
-    """
-    Compute the Pearson correlation-coefficient between the input arrays.
-    Voxels that should be ignored are assumed to have a value of NaN.
+    Expand symmetry operations to include Friedel equivalents.
     
     Parameters
     ----------
-    arr1 : numpy.ndarray, shape (n_samples, n_points)
-        input array
-    arr2 : numpy.ndarray, shape (n_samples, n_points) or (1, n_points)
-        input array to compute CC with
+    sym_ops : dict
+        rotational symmetry operations as 3x3 matrices
     
     Returns
     -------
-    ccs : numpy.ndarray, shape (n_samples)
-        correlation coefficient between paired sample arrays, or if
-        arr2.shape[0] == 1, then between each sample of arr1 to arr2
+    sym_ops_exp : dict
+        sym_ops, expanded to account for Friedel symmetry
     """
-    mask = np.isnan(np.sum(np.vstack((arr1, arr2)), axis=0))
-    arr1_m, arr2_m = arr1[:,~mask], arr2[:,~mask]
-    vx = arr1_m - arr1_m.mean(axis=-1)[:,None]
-    vy = arr2_m - arr2_m.mean(axis=-1)[:,None]
-    numerator = np.sum(vx * vy, axis=1)
-    denom = np.sqrt(np.sum(vx**2, axis=1)) * np.sqrt(np.sum(vy**2, axis=1))
-    return numerator / denom
+    sym_ops_exp = dict(sym_ops)
+    for key in sym_ops:
+        sym_ops_exp[key + len(sym_ops)] = -1 * sym_ops[key]
+    return sym_ops_exp
+
+def compute_multiplicity(model, hsampling, ksampling, lsampling):
+    """
+    Compute the multiplicity of each voxel in the map.
+    
+    Parameters
+    ----------
+    model : AtomicModel 
+        instance of AtomicModel class
+    hsampling : tuple, shape (3,)
+        (min, max, interval) along h axis
+    ksampling : tuple, shape (3,)
+        (min, max, interval) along k axis
+    lsampling : tuple, shape (3,)
+        (min, max, interval) along l axis        
+    
+    Returns
+    -------
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        grid of hkl vectors
+    multiplicity : numpy.ndarray, 3d
+        multiplicity of each grid point in the map
+    """
+    sym_ops_exp = expand_sym_ops(model.sym_ops)
+    hkl_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
+    hkl_sym = get_symmetry_equivalents(hkl_grid, sym_ops_exp)
+    ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2])).T
+    multiplicity = (np.diff(np.sort(ravel,axis=1),axis=1)!=0).sum(axis=1)+1
+    return hkl_grid, multiplicity.reshape(map_shape)
+
+def parse_asu_condition(asu_condition):
+    """
+    Parse Gemmi's string describing which reflections belong to the 
+    asymmetric unit into a string compatible with python's eval.
+    
+    Parameters
+    ----------
+    asu_condition : str
+        Gemmi-style string describing asu
+        
+    Returns
+    -------
+    asu_condition : str
+        eval-compatible string describing asu
+    """
+    # convert to numpy boolean operators
+    find = ["=", "and", "or", ">==", "<=="] 
+    replace = ["==", "&", "|", ">=", "<="]
+    for i,j in zip(find, replace):
+        asu_condition = asu_condition.replace(i,j)
+        
+    # add missing parenthesis around individual conditions
+    alphas = [idx for idx in range(len(asu_condition)) if (asu_condition[idx].isalpha() and asu_condition[idx+1] not in [" ", ")", "("])]
+    counter = 0
+    for start in alphas:
+        asu_condition = asu_condition[:start+counter] + "(" + asu_condition[start+counter:]
+        counter += 1
+        end = asu_condition.find(" ", start+counter)
+        if end == -1:
+            asu_condition = asu_condition + ")"
+        else:
+            asu_condition = asu_condition[:end] + ")" + asu_condition[end:]
+        counter += 1
+    
+    return asu_condition
+
+def get_asu_mask(space_group, hkl_grid):
+    """
+    Generate a boolean mask that indicates which hkl indices belong
+    to the asymmetric unit.
+    
+    Parameters
+    ----------
+    space_group : int or str
+        crystal's space group
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        hkl indices 
+        
+    Returns
+    -------
+    asu_mask : numpy.ndarray, shape (n_points,)
+        True indicates hkls that belong to the asymmetric unit
+    """
+    sg = gemmi.SpaceGroup(space_group)
+    asu_condition = gemmi.ReciprocalAsu(sg).condition_str()
+    asu_condition = parse_asu_condition(asu_condition)
+    h, k, l = [hkl_grid[:,i] for i in range(3)]
+    asu_mask = eval(asu_condition)
+    return asu_mask
+
+def get_resolution_mask(cell, hkl_grid, res_limit):
+    """
+    Generate a boolean mask that indicates which hkl indices belong
+    to the asymmetric unit.
+    
+    Parameters
+    ----------
+    space_group : int or str
+        crystal's space group
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        hkl indices 
+    res_limit : float
+        high resolution limit in Angstrom
+        
+    Returns
+    -------
+    res_mask : numpy.ndarray, shape (n_points,)
+        True indicates hkls that are within high resolution limit
+    res_map : numpy.ndarray, shape (n_points,)
+        resolution in Angstrom for each point in the grid
+    """
+    res_map = compute_resolution(cell, hkl_grid)
+    res_mask = res_map > res_limit
+    return res_mask, res_map
+
+def get_dq_map(A_inv, hkl_grid):
+    """
+    Compute dq, the distance to the nearest Bragg peak, for 
+    each reciprocal grid point.
+    
+    Parameters
+    ----------
+    A_inv : numpy.ndarray, shape (3,3)
+        fractional cell orthogonalization matrix
+    hkl_grid : numpy.ndarray, shape (n_points, 3)
+        grid of hkl indices
+    
+    Returns
+    -------
+    dq : numpy.ndarray, shape (n_points,)
+        distance to the nearest Bragg peak
+    """
+    hkl_closest = np.around(hkl_grid)
+    q_closest = 2*np.pi*np.inner(A_inv.T, hkl_closest).T 
+    q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T 
+    dq = np.linalg.norm(np.abs(q_closest - q_grid), axis=1)
+    return np.around(dq, decimals=8)

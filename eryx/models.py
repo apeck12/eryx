@@ -4,6 +4,7 @@ import scipy.spatial
 from .pdb import AtomicModel
 from .map_utils import *
 from .scatter import structure_factors
+from .stats import compute_cc
 
 def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000, expand_p1=True):
     """
@@ -252,7 +253,7 @@ class TranslationalDisorder:
             sigmas = np.array(list(itertools.product(sa, sb, sc)))
         
         Id = self.apply_disorder(sigmas)
-        ccs = pearson_cc(Id, np.expand_dims(target.flatten(), axis=0))
+        ccs = compute_cc(Id, np.expand_dims(target.flatten(), axis=0))
         opt_index = np.argmax(ccs)
         self.opt_sigma = sigmas[opt_index]
         self.opt_map = Id[opt_index].reshape(self.map_shape)
@@ -417,7 +418,7 @@ class LiquidLikeMotions:
         
         Id = self.apply_disorder(sigmas, gammas)
         Id = Id[:,self.mask.flatten()==1]
-        ccs = pearson_cc(Id, np.expand_dims(target.flatten(), axis=0))
+        ccs = compute_cc(Id, np.expand_dims(target.flatten(), axis=0))
         opt_index = np.argmax(ccs)
         self.opt_map = Id[opt_index].reshape(self.map_shape_nopad)
         
@@ -592,7 +593,7 @@ class RotationalDisorder:
         
         sigmas = np.linspace(sigma_min, sigma_max, n_search)        
         Id = self.apply_disorder(sigmas, num_rot)
-        ccs = pearson_cc(Id, np.expand_dims(target.flatten(), axis=0))
+        ccs = compute_cc(Id, np.expand_dims(target.flatten(), axis=0))
         opt_index = np.argmax(ccs)
         self.opt_sigma = sigmas[opt_index]
         self.opt_map = Id[opt_index].reshape(self.map_shape)
