@@ -42,9 +42,9 @@ def compute_cc_by_shell(arr1, arr2, res_map, mask=None, n_shells=10):
     
     Parameters
     ----------
-    arr1 : numpy.ndarray, shape (n_samples, n_points)
+    arr1 : numpy.ndarray, shape (n_points,)
         input array
-    arr2 : numpy.ndarray, shape (n_samples, n_points) or (1, n_points)
+    arr2 : numpy.ndarray, shape (n_points,) 
         input array to compute CC with
     mask : numpy.ndarray, shape (map_shape) or (n_points,)
         e.g. to select asu/resolution. True values indicate retained grid points
@@ -58,8 +58,10 @@ def compute_cc_by_shell(arr1, arr2, res_map, mask=None, n_shells=10):
     cc_shell : numpy.ndarray, shape (n_shells,)
         correlation coefficient by resolution shell
     """
+    arr1, arr2 = arr1.flatten(), arr2.flatten()
     if mask is None:
         mask = np.ones(res_map.shape).astype(bool)
+    mask *= ~np.isnan(np.sum(np.vstack((arr1, arr2)), axis=0))
         
     inv_dcubed = 1.0 / (res_map ** 3.0)
     res_limit = res_map[mask].min()
