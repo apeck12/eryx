@@ -290,7 +290,9 @@ def get_resolution_mask(cell, hkl_grid, res_limit):
     -------
     res_mask : numpy.ndarray, shape (n_points,)
         True indicates hkls that are within high resolution limit
+    res_map : numpy.ndarray, shape (n_points,)
+        resolution in Angstrom for each point in the grid
     """
     res_map = compute_resolution(cell, hkl_grid)
     res_mask = res_map > res_limit
-    return res_mask
+    return res_mask, res_map
