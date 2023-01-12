@@ -137,7 +137,7 @@ def incoherent_from_reciprocal(model, hsampling, ksampling, lsampling, U=None, b
     """
     hkl_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
     hkl_grid_sym = get_symmetry_equivalents(hkl_grid, model.sym_ops)
-    ravel = get_ravel_indices(hkl_grid_sym, (hsampling[2], ksampling[2], lsampling[2]))
+    ravel, map_shape_ravel = get_ravel_indices(hkl_grid_sym, (hsampling[2], ksampling[2], lsampling[2]))
     
     I_sym = np.zeros(ravel.shape)
     for asu in range(I_sym.shape[0]):

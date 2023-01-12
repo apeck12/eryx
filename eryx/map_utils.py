@@ -84,6 +84,8 @@ def get_ravel_indices(hkl_grid_sym, sampling):
     -------
     ravel : numpy.ndarray, shape (n_asu, n_points)
         indices in raveled space for hkl_grid_sym
+    map_shape_ravel : tuple, shape (3,)  
+        shape of expanded / raveled map
     """
     hkl_grid_stacked = hkl_grid_sym.reshape(-1, hkl_grid_sym.shape[-1])
     hkl_grid_int = np.around(hkl_grid_stacked * np.array(sampling)).astype(int)
@@ -96,7 +98,7 @@ def get_ravel_indices(hkl_grid_sym, sampling):
     for i in range(ravel.shape[0]):
         ravel[i] = np.ravel_multi_index((hkl_grid_int[i] - lbounds).T, map_shape_ravel)
 
-    return ravel
+    return ravel, map_shape_ravel
 
 def cos_sq(angles):
     """ Compute cosine squared of input angles in radians. """
@@ -208,8 +210,8 @@ def compute_multiplicity(model, hsampling, ksampling, lsampling):
     sym_ops_exp = expand_sym_ops(model.sym_ops)
     hkl_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
     hkl_sym = get_symmetry_equivalents(hkl_grid, sym_ops_exp)
-    ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2])).T
-    multiplicity = (np.diff(np.sort(ravel,axis=1),axis=1)!=0).sum(axis=1)+1
+    ravel, map_shape_ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2]))
+    multiplicity = (np.diff(np.sort(ravel.T,axis=1),axis=1)!=0).sum(axis=1)+1
     return hkl_grid, multiplicity.reshape(map_shape)
 
 def parse_asu_condition(asu_condition):
