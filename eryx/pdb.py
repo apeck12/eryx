@@ -120,7 +120,7 @@ def get_unit_cell_axes(cell):
 class AtomicModel:
     
     def __init__(self, pdb_file, expand_p1=False, frame=0, clean_pdb=True):
-        self.structure = gemmi.read_pdb(pdb_file)
+        self._get_gemmi_structure(pdb_file, clean_pdb)
         self._extract_cell()
         self.sym_ops, self.transformations = self._get_sym_ops(pdb_file)
         self.extract_frame(frame=frame, expand_p1=expand_p1)
