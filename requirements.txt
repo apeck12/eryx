@@ -1,0 +1,6 @@
+gemmi
+matplotlib
+numpy
+plotly
+scipy
+tqdm
