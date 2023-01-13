@@ -119,12 +119,25 @@ def get_unit_cell_axes(cell):
 
 class AtomicModel:
     
-    def __init__(self, pdb_file, expand_p1=False, frame=0):
-        self.structure = gemmi.read_pdb(pdb_file)
+    def __init__(self, pdb_file, expand_p1=False, frame=0, clean_pdb=True):
+        self._get_gemmi_structure(pdb_file, clean_pdb)
         self._extract_cell()
         self.sym_ops, self.transformations = self._get_sym_ops(pdb_file)
         self.extract_frame(frame=frame, expand_p1=expand_p1)
-        
+
+    def _get_gemmi_structure(self, pdb_file, clean_pdb):
+        """
+        Retrieve Gemmi structure from PDB file.
+        Optionally clean up water molecules, hydrogen, ...
+        """
+        self.structure = gemmi.read_pdb(pdb_file)
+        if clean_pdb:
+            self.structure.remove_alternative_conformations()
+            self.structure.remove_hydrogens()
+            self.structure.remove_waters()
+            self.structure.remove_ligands_and_waters()
+            self.structure.remove_empty_chains()
+
     def _extract_cell(self):
         """
         Extract unit cell information.
