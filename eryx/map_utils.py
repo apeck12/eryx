@@ -321,3 +321,54 @@ def get_dq_map(A_inv, hkl_grid):
     q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T 
     dq = np.linalg.norm(np.abs(q_closest - q_grid), axis=1)
     return np.around(dq, decimals=8)
+
+def get_centered_sampling(map_shape, sampling):
+    """
+    Get the hsampling, ksampling, and lsampling tuples for the input 
+    map shape, assuming that the map is centered about the origin in 
+    reciprocal space, i.e. h,k,l=(0,0,0).
+    
+    Parameters
+    ----------
+    map_shape : tuple
+        map dimensions
+    sampling : tuple
+        fractional sampling rate along h,k,l axes
+    
+    Returns
+    -------
+    list of tuples, [hsampling, lsampling, ksampling]
+        in which each tuple corresponds to (min, max, fractional sampling rate)
+    """
+    extents = [int((map_shape[i]-1) / sampling[i] / 2.0) for i in range(3)]
+    return [(-extents[i], extents[i], sampling[i]) for i in range(3)]
+
+def resize_map(new_map, old_sampling, new_sampling):
+    """
+    Resize map if symmetrization has resulted in the inclusion of 
+    out-of-bounds regions, but not those valid by Friedel's law.
+    
+    Parameters
+    ----------
+    new_map : numpy.ndarray, 3d
+        map to potentially crop
+    old_sampling : tuple of tuples
+        (hsampling, ksampling, lsampling) for original hkl_grid
+    new_sampling : tuple of tuples 
+        (hsampling, ksampling, lsampling) for new_map
+        
+    Returns
+    -------
+    new_map : numpy.ndarray, 3d
+        potentially cropped map
+    """
+    if new_sampling[0][1] != old_sampling[0][1]:
+        excise = 2*(new_sampling[0][1] - old_sampling[0][1])
+        new_map = new_map[excise:-excise,:,:]
+    if new_sampling[1][1] != old_sampling[1][1]:
+        excise = 2*(new_sampling[1][1] - old_sampling[1][1])
+        new_map = new_map[:,excise:-excise,:]
+    if new_sampling[2][1] != old_sampling[2][1]:
+        excise = 2*(new_sampling[2][1] - old_sampling[2][1])
+        new_map = new_map[:,:,excise:-excise]
+    return new_map
