@@ -16,7 +16,7 @@ class TestScatter(object):
     @classmethod
     def setup_class(cls):
         cls.pdb_path = "pdbs/histidine_p1.pdb"
-        cls.model = AtomicModel(cls.pdb_path)
+        cls.model = AtomicModel(cls.pdb_path, clean_pdb=False)
         cls.model.flatten_model()
         cls.q_grid, cls.map_shape = map_utils.generate_grid(cls.model.A_inv, (-2,2,5), (-2,2,5), (-2,2,5))
         

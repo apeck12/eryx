@@ -118,8 +118,8 @@ class TestLiquidLikeMotions:
     Check liquid like motions model.
     """
     def setup_class(cls):
-        cls.pdb_path = "pdbs/histidine.pdb"
-        cls.model = LiquidLikeMotions(cls.pdb_path, (-13,13,2), (-13,13,2), (-13,13,2), expand_p1=True)
+        cls.pdb_path = "pdbs/5zck.pdb"
+        cls.model = LiquidLikeMotions(cls.pdb_path, (-5,5,2), (-13,13,2), (-20,20,2), expand_p1=True)
 
     def test_dilate(self):
         """ Check that map was correctly dilated: q_mags should match. """
