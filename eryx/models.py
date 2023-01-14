@@ -236,13 +236,13 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
 
 class TranslationalDisorder:
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_friedel=True, res_limit=0):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1, batch_size)
+        self._setup(pdb_path, batch_size, expand_friedel, res_limit)
         
-    def _setup(self, pdb_path, expand_p1=True, batch_size=10000, expand_friedel=True, res_limit=0):
+    def _setup(self, pdb_path, batch_size=10000, expand_friedel=True, res_limit=0):
         """
         Set up class, including computing the molecular transform.
         
