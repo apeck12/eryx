@@ -84,6 +84,8 @@ def get_ravel_indices(hkl_grid_sym, sampling):
     -------
     ravel : numpy.ndarray, shape (n_asu, n_points)
         indices in raveled space for hkl_grid_sym
+    map_shape_ravel : tuple, shape (3,)  
+        shape of expanded / raveled map
     """
     hkl_grid_stacked = hkl_grid_sym.reshape(-1, hkl_grid_sym.shape[-1])
     hkl_grid_int = np.around(hkl_grid_stacked * np.array(sampling)).astype(int)
@@ -96,7 +98,7 @@ def get_ravel_indices(hkl_grid_sym, sampling):
     for i in range(ravel.shape[0]):
         ravel[i] = np.ravel_multi_index((hkl_grid_int[i] - lbounds).T, map_shape_ravel)
 
-    return ravel
+    return ravel, map_shape_ravel
 
 def cos_sq(angles):
     """ Compute cosine squared of input angles in radians. """
@@ -208,8 +210,8 @@ def compute_multiplicity(model, hsampling, ksampling, lsampling):
     sym_ops_exp = expand_sym_ops(model.sym_ops)
     hkl_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling, return_hkl=True)
     hkl_sym = get_symmetry_equivalents(hkl_grid, sym_ops_exp)
-    ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2])).T
-    multiplicity = (np.diff(np.sort(ravel,axis=1),axis=1)!=0).sum(axis=1)+1
+    ravel, map_shape_ravel = get_ravel_indices(hkl_sym, (hsampling[2], ksampling[2], lsampling[2]))
+    multiplicity = (np.diff(np.sort(ravel.T,axis=1),axis=1)!=0).sum(axis=1)+1
     return hkl_grid, multiplicity.reshape(map_shape)
 
 def parse_asu_condition(asu_condition):
@@ -319,3 +321,54 @@ def get_dq_map(A_inv, hkl_grid):
     q_grid = 2*np.pi*np.inner(A_inv.T, hkl_grid).T 
     dq = np.linalg.norm(np.abs(q_closest - q_grid), axis=1)
     return np.around(dq, decimals=8)
+
+def get_centered_sampling(map_shape, sampling):
+    """
+    Get the hsampling, ksampling, and lsampling tuples for the input 
+    map shape, assuming that the map is centered about the origin in 
+    reciprocal space, i.e. h,k,l=(0,0,0).
+    
+    Parameters
+    ----------
+    map_shape : tuple
+        map dimensions
+    sampling : tuple
+        fractional sampling rate along h,k,l axes
+    
+    Returns
+    -------
+    list of tuples, [hsampling, lsampling, ksampling]
+        in which each tuple corresponds to (min, max, fractional sampling rate)
+    """
+    extents = [int((map_shape[i]-1) / sampling[i] / 2.0) for i in range(3)]
+    return [(-extents[i], extents[i], sampling[i]) for i in range(3)]
+
+def resize_map(new_map, old_sampling, new_sampling):
+    """
+    Resize map if symmetrization has resulted in the inclusion of 
+    out-of-bounds regions, but not those valid by Friedel's law.
+    
+    Parameters
+    ----------
+    new_map : numpy.ndarray, 3d
+        map to potentially crop
+    old_sampling : tuple of tuples
+        (hsampling, ksampling, lsampling) for original hkl_grid
+    new_sampling : tuple of tuples 
+        (hsampling, ksampling, lsampling) for new_map
+        
+    Returns
+    -------
+    new_map : numpy.ndarray, 3d
+        potentially cropped map
+    """
+    if new_sampling[0][1] != old_sampling[0][1]:
+        excise = 2*(new_sampling[0][1] - old_sampling[0][1])
+        new_map = new_map[excise:-excise,:,:]
+    if new_sampling[1][1] != old_sampling[1][1]:
+        excise = 2*(new_sampling[1][1] - old_sampling[1][1])
+        new_map = new_map[:,excise:-excise,:]
+    if new_sampling[2][1] != old_sampling[2][1]:
+        excise = 2*(new_sampling[2][1] - old_sampling[2][1])
+        new_map = new_map[:,:,excise:-excise]
+    return new_map

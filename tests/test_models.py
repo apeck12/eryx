@@ -7,6 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from eryx.models import *
 from eryx.pdb import AtomicModel
 from eryx.map_utils import generate_grid
+from base import setup_model
 
 class TestTransforms:
     """
@@ -19,31 +20,8 @@ class TestTransforms:
         cls.ksampling = (-17,17,1)
         cls.lsampling = (-29,29,1)
 
-    def test_molecular_transform(self):
-        """ Check molecular transform calculation. """
-        q_grid, I1 = compute_molecular_transform(self.pdb_path,
-                                                 self.hsampling,
-                                                 self.ksampling,
-                                                 self.lsampling,
-                                                 expand_p1=True,
-                                                 symmetrize='real')
-        q_grid, I2 = compute_molecular_transform(self.pdb_path_p1,
-                                                 self.hsampling,
-                                                 self.ksampling,
-                                                 self.lsampling,
-                                                 expand_p1=False,
-                                                 symmetrize='real')
-        q_grid, I3 = compute_molecular_transform(self.pdb_path_p1,
-                                                 self.hsampling,
-                                                 self.ksampling,
-                                                 self.lsampling,
-                                                 expand_p1=False,
-                                                 symmetrize='reciprocal')
-        assert np.allclose(I1, I2)
-        assert np.allclose(I1, I3)
-
     def test_crystal_transform(self):
-        """ Check crystal trnasform calculation. """
+        """ Check crystal transform calculation. """
         q_grid, I1 = compute_crystal_transform(self.pdb_path,
                                                self.hsampling,
                                                self.ksampling,
@@ -57,6 +35,60 @@ class TestTransforms:
         # crystal transform is more sensitive to limited precision of pdb xyz
         assert np.allclose(np.corrcoef(I1.flatten(), I2.flatten())[0,1], 1)
         assert np.allclose(np.mean(np.abs(I1 - I2) / I2), 0, atol=0.01)
+
+def molecular_transform_reference(pdb_path, model, hsampling, ksampling, lsampling):
+    """ Reference implementation (no fancy symmetrization). """
+    model = AtomicModel(pdb_path, expand_p1=True, frame=-1)
+    q_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling)
+    
+    I = np.zeros(q_grid.shape[0])
+    for asu in range(model.xyz.shape[0]):
+        I += np.square(np.abs(structure_factors(q_grid,
+                                                model.xyz[asu],
+                                                model.ff_a[asu], 
+                                                model.ff_b[asu], 
+                                                model.ff_c[asu])))
+    return I.reshape(map_shape)
+        
+class TestMolecularTransform:
+    """ Check that molecular transform calculation is working. """
+    
+    def setup_class(cls):
+        cls.Iref = {}
+        for case in ['orthorhombic', 'trigonal', 'triclinic', 'tetragonal']:
+            pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
+            cls.Iref[case] = molecular_transform_reference(pdb_path, model, hsampling, ksampling, lsampling)
+        cls.dmin = dict(zip(['orthorhombic', 'trigonal', 'triclinic', 'tetragonal'], [1.5,1.5,1.5,6.0]))
+
+    def test_basic_usage(self):
+        """ Check that two symmetrization approaches match reference. """
+        for case in ['orthorhombic', 'trigonal', 'triclinic', 'tetragonal']:
+            pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
+            hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=True)
+            hkl, I2 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=False)
+            assert np.max(np.abs(self.Iref[case] -  I1)/I1) < 1e-2
+            assert np.max(np.abs(self.Iref[case] -  I2)/I2) < 1e-2
+            
+    def test_masking(self):
+        """ Check case of applying a mask to limit resolution. """
+        for case in ['orthorhombic', 'trigonal', 'triclinic', 'tetragonal']:
+            pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
+            hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=self.dmin[case])
+            hkl, I2 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=False, res_limit=self.dmin[case])
+            assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
+            assert np.max(np.abs(self.Iref[case][I2!=0] -  I2[I2!=0])/I2[I2!=0]) < 1e-2
+    
+    def test_expansion(self):
+        """ Check that the expand_friedel=True option correctly expands to full reciprocal grid. """
+        case = 'tetragonal'
+        pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
+        hkl, I1 = compute_molecular_transform(pdb_path, (0,10,1), ksampling, lsampling, expand_friedel=True, res_limit=self.dmin[case])
+        assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
+        
+        case = 'triclinic'
+        pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
+        hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, (0,15,2), expand_friedel=True, res_limit=self.dmin[case])
+        assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
         
 class TestTranslationalDisorder:
     """
