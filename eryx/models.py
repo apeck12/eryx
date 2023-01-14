@@ -34,7 +34,7 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
     q_grid : numpy.ndarray, (n_points, 3)
         q-vectors corresponding to flattened intensity map
     I : numpy.ndarray, 3d
-        intensity map of the molecular transform
+        intensity map of the crystal transform
     """
     model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
     model.flatten_model()
@@ -60,8 +60,10 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
     (expand_friedel=False), while the other will output a map that 
     includes the volume of reciprocal space related by Friedel's law.
     If h/k/lsampling are symmetric about (0,0,0), these approaches 
-    will yield identical maps.
-    
+    will yield identical maps. If expand_friedel is False and the
+    space group is P1, the simple sum over asus will be performed
+    to avoid wasting time on determining symmetry relationships.
+
     Parameters
     ----------
     pdb_path : str
@@ -99,13 +101,25 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
     q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
     mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
     sampling = (hsampling[2], ksampling[2], lsampling[2])
-    
-    if expand_friedel:
-        I = incoherent_sum_real(model, hkl_grid, sampling, U, batch_size, mask)
-    else:
-        I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size)
+
+    if model.space_group == 'P 1' and not expand_friedel:
+        I = np.zeros(q_grid.shape[0])
+        for asu in range(model.xyz.shape[0]):
+            I[mask] += np.square(np.abs(structure_factors(q_grid[mask],
+                                                          model.xyz[asu],
+                                                          model.ff_a[asu], 
+                                                          model.ff_b[asu], 
+                                                          model.ff_c[asu],
+                                                          U=U,
+                                                          batch_size=batch_size)))
         I = I.reshape(map_shape)
-        I[~mask.reshape(map_shape)] = 0
+    else:
+        if expand_friedel:
+            I = incoherent_sum_real(model, hkl_grid, sampling, U, batch_size, mask)
+        else:
+            I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size)
+            I = I.reshape(map_shape)
+            I[~mask.reshape(map_shape)] = 0
 
     return q_grid, I
 
