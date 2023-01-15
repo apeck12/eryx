@@ -34,7 +34,7 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
     q_grid : numpy.ndarray, (n_points, 3)
         q-vectors corresponding to flattened intensity map
     I : numpy.ndarray, 3d
-        intensity map of the molecular transform
+        intensity map of the crystal transform
     """
     model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
     model.flatten_model()
@@ -49,8 +49,8 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
                                            batch_size=batch_size)))
     return q_grid, I.reshape(map_shape)
 
-def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, 
-                                expand_p1=True, batch_size=10000, expand_friedel=True, res_limit=0):
+def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
+                                expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
     """
     Compute the molecular transform as the incoherent sum of the 
     asymmetric units. If expand_p1 is False, the pdb is assumed 
@@ -60,8 +60,10 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
     (expand_friedel=False), while the other will output a map that 
     includes the volume of reciprocal space related by Friedel's law.
     If h/k/lsampling are symmetric about (0,0,0), these approaches 
-    will yield identical maps.
-    
+    will yield identical maps. If expand_friedel is False and the
+    space group is P1, the simple sum over asus will be performed
+    to avoid wasting time on determining symmetry relationships.
+
     Parameters
     ----------
     pdb_path : str
@@ -76,12 +78,14 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
         isotropic displacement parameters, applied to each asymmetric unit
     expand_p1 : bool
         if True, expand PDB (asymmetric unit) to unit cell
-    batch_size : int
-        number of q-vectors to evaluate per batch
     expand_friedel : bool
         if True, expand to full sphere in reciprocal space
     res_limit : float
         high resolution limit
+    batch_size : int
+        number of q-vectors to evaluate per batch 
+    n_processes : int
+        number of processors over which to parallelize the calculation
         
     Returns
     -------
@@ -99,17 +103,30 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
     q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
     mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
     sampling = (hsampling[2], ksampling[2], lsampling[2])
-    
-    if expand_friedel:
-        I = incoherent_sum_real(model, hkl_grid, sampling, U, batch_size, mask)
-    else:
-        I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size)
+
+    if model.space_group == 'P 1' and not expand_friedel:
+        I = np.zeros(q_grid.shape[0])
+        for asu in range(model.xyz.shape[0]):
+            I[mask] += np.square(np.abs(structure_factors(q_grid[mask],
+                                                          model.xyz[asu],
+                                                          model.ff_a[asu], 
+                                                          model.ff_b[asu], 
+                                                          model.ff_c[asu],
+                                                          U=U,
+                                                          batch_size=batch_size,
+                                                          n_processes=n_processes)))
         I = I.reshape(map_shape)
-        I[~mask.reshape(map_shape)] = 0
+    else:
+        if expand_friedel:
+            I = incoherent_sum_real(model, hkl_grid, sampling, U, mask, batch_size, n_processes)
+        else:
+            I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size, n_processes)
+            I = I.reshape(map_shape)
+            I[~mask.reshape(map_shape)] = 0
 
     return q_grid, I
 
-def incoherent_sum_real(model, hkl_grid, sampling, U=None, batch_size=10000, mask=None):
+def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size=10000, n_processes=8):
     """
     Compute the incoherent sum of the scattering from all asus.
     The scattering for the unique reciprocal wedge is computed 
@@ -132,6 +149,8 @@ def incoherent_sum_real(model, hkl_grid, sampling, U=None, batch_size=10000, mas
         number of q-vectors to evaluate per batch
     mask : numpy.ndarray, shape (n_points,)
         boolean mask, where True indicates grid points to keep
+    n_processes : int
+        number of processors over which to parallelize the calculation
         
     Returns
     -------
@@ -153,7 +172,8 @@ def incoherent_sum_real(model, hkl_grid, sampling, U=None, batch_size=10000, mas
                                                           model.ff_b[asu], 
                                                           model.ff_c[asu], 
                                                           U=U, 
-                                                          batch_size=batch_size)))
+                                                          batch_size=batch_size,
+                                                          n_processes=n_processes)))
         
     # get symmetry information for expanded map
     sym_ops = expand_sym_ops(model.sym_ops)
@@ -178,7 +198,7 @@ def incoherent_sum_real(model, hkl_grid, sampling, U=None, batch_size=10000, mas
     
     return I
     
-def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=10000):
+def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=10000, n_processes=8):
     """
     Compute the incoherent sum of the scattering from all asus.
     For each grid point, the symmetry-equivalents are determined
@@ -200,6 +220,8 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
         isotropic displacement parameters, applied to each asymmetric unit
     batch_size : int
         number of q-vectors to evaluate per batch
+    n_processes : int
+        number of processors over which to parallelize the calculation
         
     Returns
     -------
@@ -219,7 +241,8 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
                                                             model.ff_b[0],
                                                             model.ff_c[0],
                                                             U=U,
-                                                            batch_size=batch_size)))
+                                                            batch_size=batch_size,
+                                                            n_processes=n_processes)))
         else:
             intersect1d, comm1, comm2 = np.intersect1d(ravel[0], ravel[asu], return_indices=True)
             I_sym[asu][comm2] = I_sym[0][comm1]
@@ -236,13 +259,13 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
 
 class TranslationalDisorder:
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_friedel=True, res_limit=0):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, batch_size, expand_friedel, res_limit)
+        self._setup(pdb_path, expand_friedel, res_limit, batch_size, n_processes)
         
-    def _setup(self, pdb_path, batch_size=10000, expand_friedel=True, res_limit=0):
+    def _setup(self, pdb_path, expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
         """
         Set up class, including computing the molecular transform.
         
@@ -252,18 +275,21 @@ class TranslationalDisorder:
             path to coordinates file of asymmetric unit
         expand_friedel : bool
             if True, expand to include portion of reciprocal space related by Friedel's law
-        batch_size : int
-            number of q-vectors to evaluate per batch
         res_limit : float
             high resolution limit
+        batch_size : int     
+            number of q-vectors to evaluate per batch
+        n_processes : int
+            number of processors for structure factor calculation
         """
         self.q_grid, self.transform = compute_molecular_transform(pdb_path, 
                                                                   self.hsampling, 
                                                                   self.ksampling, 
                                                                   self.lsampling,
-                                                                  batch_size=batch_size,
                                                                   expand_friedel=expand_friedel,
-                                                                  res_limit=res_limit)
+                                                                  res_limit=res_limit,
+                                                                  batch_size=batch_size,
+                                                                  n_processes=n_processes)
         self.transform[self.transform==0] = np.nan # compute_cc expects masked values to be np.nan
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         self.map_shape = self.transform.shape

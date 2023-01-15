@@ -340,7 +340,7 @@ def get_centered_sampling(map_shape, sampling):
     list of tuples, [hsampling, lsampling, ksampling]
         in which each tuple corresponds to (min, max, fractional sampling rate)
     """
-    extents = [int((map_shape[i]-1) / sampling[i] / 2.0) for i in range(3)]
+    extents = [((map_shape[i]-1) / sampling[i] / 2.0) for i in range(3)]
     return [(-extents[i], extents[i], sampling[i]) for i in range(3)]
 
 def resize_map(new_map, old_sampling, new_sampling):
@@ -362,13 +362,14 @@ def resize_map(new_map, old_sampling, new_sampling):
     new_map : numpy.ndarray, 3d
         potentially cropped map
     """
-    if new_sampling[0][1] != old_sampling[0][1]:
-        excise = 2*(new_sampling[0][1] - old_sampling[0][1])
+    tol = 1e-6
+    if np.abs(new_sampling[0][1] - old_sampling[0][1]) > tol:
+        excise = int(np.around(2*(new_sampling[0][1] - old_sampling[0][1])))
         new_map = new_map[excise:-excise,:,:]
-    if new_sampling[1][1] != old_sampling[1][1]:
-        excise = 2*(new_sampling[1][1] - old_sampling[1][1])
+    if np.abs(new_sampling[1][1] - old_sampling[1][1]) > tol:
+        excise = int(np.around(2*(new_sampling[1][1] - old_sampling[1][1])))
         new_map = new_map[:,excise:-excise,:]
-    if new_sampling[2][1] != old_sampling[2][1]:
-        excise = 2*(new_sampling[2][1] - old_sampling[2][1])
+    if np.abs(new_sampling[2][1] - old_sampling[2][1]) > tol:
+        excise = int(np.around(2*(new_sampling[2][1] - old_sampling[2][1])))
         new_map = new_map[:,:,excise:-excise]
     return new_map
