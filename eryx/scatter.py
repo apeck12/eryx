@@ -1,4 +1,6 @@
 import numpy as np
+import multiprocess as mp
+from functools import partial
 
 def compute_form_factors(q_grid, ff_a, ff_b, ff_c):
     """
@@ -62,20 +64,28 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
     A = np.sum(A, axis=1)
     return A 
 
-def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None, batch_size=100000):
+def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None, batch_size=100000, n_processes=8):
     """
     Batched version of the structure factor calculation. See 
     docstring for structure_factors_batch for parameters and 
-    returns.
+    returns, with the exception of n_processes, which refers 
+    to the number of processors available. If greater than 1,
+    multiprocessing will be used.
     """
     n_batches = q_grid.shape[0] // batch_size
     if n_batches == 0:
         n_batches = 1
     splits = np.append(np.arange(n_batches) * batch_size, np.array([q_grid.shape[0]]))
 
-    A = np.zeros(q_grid.shape[0], dtype=np.complex128)
-    for batch in range(n_batches):
-        q_sel = q_grid[splits[batch]: splits[batch+1]]
-        A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U)    
-
+    if n_processes == 1:
+        A = np.zeros(q_grid.shape[0], dtype=np.complex128)
+        for batch in range(n_batches):
+            q_sel = q_grid[splits[batch]: splits[batch+1]]
+            A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U)    
+    else:
+        q_sel = [q_grid[splits[batch]: splits[batch+1]] for batch in range(n_batches)]
+        pool = mp.Pool(processes=n_processes)
+        sf_partial = partial(structure_factors_batch, xyz=xyz, ff_a=ff_a, ff_b=ff_b, ff_c=ff_c, U=U)
+        A = np.hstack(pool.map(sf_partial, q_sel))
+       
     return A
