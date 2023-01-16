@@ -376,13 +376,20 @@ class TranslationalDisorder:
 
 class LiquidLikeMotions:
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, border=1, expand_p1=True):
+    """
+    Model in which collective motions decay exponentially with distance
+    across the crystal. Mathematically the predicted diffuse scattering 
+    is the convolution between the crystal transform and a disorder kernel.
+    """
+    
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
+                 border=1, res_limit=0, batch_size=5000, n_processes=8):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, batch_size, border, expand_p1)
+        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, n_processes)
                 
-    def _setup(self, pdb_path, batch_size, border, expand_p1):
+    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, n_processes):
         """
         Set up class, including calculation of the crystal transform.
         The transform can be evaluated to a higher resolution so that
@@ -392,30 +399,39 @@ class LiquidLikeMotions:
         ----------
         pdb_path : str
             path to coordinates file of asymmetric unit
-        batch_size : int
-            number of q-vectors to evaluate per batch
-        border : int
-            number of border Miller indices along each direction 
         expand_p1 : bool
             if True, pdb corresponds to asymmetric unit; expand to unit cell
+        border : int
+            number of border (integral) Miller indices along each direction 
+        res_limit : float
+            high-resolution limit in Angstrom
+        batch_size : int
+            number of q-vectors to evaluate per batch
+        n_processes : int
+            number of processes for structure factor calculation
         """
         # compute crystal transform at integral Miller indices and dilate
         self.q_grid_int, transform = compute_crystal_transform(pdb_path, 
                                                                (self.hsampling[0]-border, self.hsampling[1]+border, 1), 
                                                                (self.ksampling[0]-border, self.ksampling[1]+border, 1), 
                                                                (self.lsampling[0]-border, self.lsampling[1]+border, 1),
+                                                               expand_p1=expand_p1,
+                                                               res_limit=res_limit,
                                                                batch_size=batch_size,
-                                                               expand_p1=expand_p1)
+                                                               n_processes=n_processes)
         self.transform = self._dilate(transform, (self.hsampling[2], self.ksampling[2], self.lsampling[2]))
         self.map_shape, self.map_shape_int = self.transform.shape, transform.shape
         
         # generate q-vectors for dilated map
         model = AtomicModel(pdb_path)
-        self.q_grid, self.map_shape = generate_grid(model.A_inv, 
-                                                    (self.hsampling[0]-border, self.hsampling[1]+border, self.hsampling[2]), 
-                                                    (self.ksampling[0]-border, self.ksampling[1]+border, self.ksampling[2]), 
-                                                    (self.lsampling[0]-border, self.lsampling[1]+border, self.lsampling[2])) 
+        hkl_grid, self.map_shape = generate_grid(model.A_inv, 
+                                                 (self.hsampling[0]-border, self.hsampling[1]+border, self.hsampling[2]), 
+                                                 (self.ksampling[0]-border, self.ksampling[1]+border, self.ksampling[2]), 
+                                                 (self.lsampling[0]-border, self.lsampling[1]+border, self.lsampling[2]),
+                                                 return_hkl=True)
+        self.q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
+        self.res_mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
         
         # generate mask for padded region
         self.mask = np.zeros(self.map_shape)
@@ -489,6 +505,7 @@ class LiquidLikeMotions:
             q2s2 = np.sum(self.q_grid.T * np.dot(np.square(sigmas)[:,np.newaxis] * np.eye(3), self.q_grid.T), axis=1)
 
         Id *= np.exp(-1*q2s2) * q2s2
+        Id[:,~self.res_mask] = np.nan
         return Id
 
     def optimize(self, target, sigmas_min, sigmas_max, gammas_min, gammas_max, ns_search=20, ng_search=10):
