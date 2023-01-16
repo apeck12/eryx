@@ -39,7 +39,7 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
     q_grid : numpy.ndarray, (n_points, 3)
         q-vectors corresponding to flattened intensity map
     I : numpy.ndarray, 3d
-        intensity map of the crystal transform, np.nan 
+        intensity map of the crystal transform
     """
     model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
     model.flatten_model()
@@ -60,8 +60,6 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
                                                  U=U, 
                                                  batch_size=batch_size,
                                                  n_processes=n_processes)))
-    I[~mask] = np.nan
-    
     return q_grid, I.reshape(map_shape)
 
 def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
