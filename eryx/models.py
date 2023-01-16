@@ -415,28 +415,31 @@ class LiquidLikeMotions:
         n_processes : int
             number of processes for structure factor calculation
         """
-        # compute crystal transform at integral Miller indices and dilate
-        self.q_grid_int, transform = compute_crystal_transform(pdb_path, 
-                                                               (self.hsampling[0]-border, self.hsampling[1]+border, 1), 
-                                                               (self.ksampling[0]-border, self.ksampling[1]+border, 1), 
-                                                               (self.lsampling[0]-border, self.lsampling[1]+border, 1),
-                                                               expand_p1=expand_p1,
-                                                               res_limit=res_limit,
-                                                               batch_size=batch_size,
-                                                               n_processes=n_processes)
-        self.transform = self._dilate(transform, (self.hsampling[2], self.ksampling[2], self.lsampling[2]))
-        self.map_shape, self.map_shape_int = self.transform.shape, transform.shape
+        # generate atomic model
+        model = AtomicModel(pdb_path, expand_p1=expand_p1)
+        model.flatten_model()
         
-        # generate q-vectors for dilated map
-        model = AtomicModel(pdb_path)
+        # get grid for padded map
+        hsampling_padded = (self.hsampling[0]-border, self.hsampling[1]+border, self.hsampling[2])
+        ksampling_padded = (self.ksampling[0]-border, self.ksampling[1]+border, self.ksampling[2])
+        lsampling_padded = (self.lsampling[0]-border, self.lsampling[1]+border, self.lsampling[2])
         hkl_grid, self.map_shape = generate_grid(model.A_inv, 
-                                                 (self.hsampling[0]-border, self.hsampling[1]+border, self.hsampling[2]), 
-                                                 (self.ksampling[0]-border, self.ksampling[1]+border, self.ksampling[2]), 
-                                                 (self.lsampling[0]-border, self.lsampling[1]+border, self.lsampling[2]),
+                                                 hsampling_padded,
+                                                 ksampling_padded,
+                                                 lsampling_padded,
                                                  return_hkl=True)
-        self.q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
-        self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         self.res_mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
+        
+        # compute crystal transform
+        self.q_grid, self.transform = compute_crystal_transform(pdb_path,
+                                                                hsampling_padded,
+                                                                ksampling_padded,
+                                                                lsampling_padded,
+                                                                expand_p1=expand_p1,
+                                                                res_limit=res_limit,
+                                                                batch_size=batch_size,
+                                                                n_processes=n_processes)
+        self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         
         # generate mask for padded region
         self.mask = np.zeros(self.map_shape)
@@ -447,27 +450,6 @@ class LiquidLikeMotions:
                                                                           2*border*self.ksampling[2], 
                                                                           2*border*self.lsampling[2]]))
         
-    def _dilate(self, X, d):
-        """
-        Dilate map, placing zeros between the original entries.
-        
-        Parameters
-        ----------
-        X : numpy.ndarray, 3d
-            map to dilate
-        d : tuple, shape (3,)
-            number of zeros between entries along each direction
-            
-        Returns
-        -------
-        Xd : numpy.ndarray, 3d
-            dilated map
-        """
-        Xd_shape = np.multiply(X.shape, d)
-        Xd = np.zeros(Xd_shape, dtype=X.dtype)
-        Xd[0:Xd_shape[0]:d[0], 0:Xd_shape[1]:d[1], 0:Xd_shape[2]:d[2]] = X
-        return Xd[:-1*(d[0]-1),:-1*(d[1]-1),:-1*(d[2]-1)]
-    
     def apply_disorder(self, sigmas, gammas):
         """
         Compute the diffuse map(s) from the crystal transform as:
@@ -564,7 +546,7 @@ class LiquidLikeMotions:
 
         print(f"Optimal sigma: {self.opt_sigma}, optimal gamma: {self.opt_gamma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas, gammas
-
+    
 class RotationalDisorder:
     
     """
