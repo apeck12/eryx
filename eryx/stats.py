@@ -103,7 +103,7 @@ def compute_cc_by_dq(arr1, arr2, dq_map, mask=None):
     """
     arr1, arr2 = arr1.flatten(), arr2.flatten()
     if mask is None:
-        mask = np.ones(res_map.shape).astype(bool)
+        mask = np.ones(dq_map.shape).astype(bool)
     mask *= ~np.isnan(np.sum(np.vstack((arr1, arr2)), axis=0))
     
     dq_vals = np.unique(dq_map)
