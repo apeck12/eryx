@@ -6,7 +6,8 @@ from .map_utils import *
 from .scatter import structure_factors
 from .stats import compute_cc
 
-def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, batch_size=10000, expand_p1=True):
+def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True, 
+                              res_limit=0, batch_size=10000, n_processes=8):
     """
     Compute the crystal transform as the coherent sum of the
     asymmetric units. If expand_p1 is False, it is assumed 
@@ -22,31 +23,45 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
         (kmin, kmax, oversampling) relative to Miller indices
     lsampling : tuple, shape (3,)
         (lmin, lmax, oversampling) relative to Miller indices
-    U : numpy.ndarray, shape (n_atoms,)
-        isotropic displacement parameters, applied to each asymmetric unit
-    batch_size : int
-        number of q-vectors to evaluate per batch
     expand_p1 : bool
         if True, expand PDB (asymmetric unit) to unit cell
+    U : numpy.ndarray, shape (n_atoms,)
+        isotropic displacement parameters, applied to each asymmetric unit
+    res_limit : float
+        high resolution limit
+    batch_size : int
+        number of q-vectors to evaluate per batch 
+    n_processes : int
+        number of processors over which to parallelize the calculation
         
     Returns
     -------
     q_grid : numpy.ndarray, (n_points, 3)
         q-vectors corresponding to flattened intensity map
     I : numpy.ndarray, 3d
-        intensity map of the crystal transform
+        intensity map of the crystal transform, np.nan 
     """
     model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
     model.flatten_model()
-    q_grid, map_shape = generate_grid(model.A_inv, hsampling, ksampling, lsampling)
+    hkl_grid, map_shape = generate_grid(model.A_inv, 
+                                        hsampling,
+                                        ksampling, 
+                                        lsampling, 
+                                        return_hkl=True)
+    q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
+    mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
     
-    I = np.square(np.abs(structure_factors(q_grid,
-                                           model.xyz, 
-                                           model.ff_a,
-                                           model.ff_b,
-                                           model.ff_c,
-                                           U=U, 
-                                           batch_size=batch_size)))
+    I = np.zeros(q_grid.shape[0])
+    I[mask] = np.square(np.abs(structure_factors(q_grid[mask],
+                                                 model.xyz, 
+                                                 model.ff_a,
+                                                 model.ff_b,
+                                                 model.ff_c,
+                                                 U=U, 
+                                                 batch_size=batch_size,
+                                                 n_processes=n_processes)))
+    I[~mask] = np.nan
+    
     return q_grid, I.reshape(map_shape)
 
 def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
