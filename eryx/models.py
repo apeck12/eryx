@@ -7,11 +7,14 @@ from .scatter import structure_factors
 from .stats import compute_cc
 
 def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True, 
-                              res_limit=0, batch_size=10000, n_processes=8):
+                              res_limit=0, batch_size=5000, n_processes=8):
     """
     Compute the crystal transform as the coherent sum of the
     asymmetric units. If expand_p1 is False, it is assumed 
     that the pdb contains asymmetric units as separate frames.
+    The crystal transform is only defined at integral Miller 
+    indices, so grid points at fractional Miller indices or 
+    beyond the resolution limit will be set to zero.
     
     Parameters
     ----------
@@ -50,16 +53,18 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
                                         return_hkl=True)
     q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
     mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
+    dq_map = np.around(get_dq_map(model.A_inv, hkl_grid), 5)
+    dq_map[~mask] = -1
     
     I = np.zeros(q_grid.shape[0])
-    I[mask] = np.square(np.abs(structure_factors(q_grid[mask],
-                                                 model.xyz, 
-                                                 model.ff_a,
-                                                 model.ff_b,
-                                                 model.ff_c,
-                                                 U=U, 
-                                                 batch_size=batch_size,
-                                                 n_processes=n_processes)))
+    I[dq_map==0] = np.square(np.abs(structure_factors(q_grid[dq_map==0],
+                                                      model.xyz, 
+                                                      model.ff_a,
+                                                      model.ff_b,
+                                                      model.ff_c,
+                                                      U=U, 
+                                                      batch_size=batch_size,
+                                                      n_processes=n_processes)))
     return q_grid, I.reshape(map_shape)
 
 def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
