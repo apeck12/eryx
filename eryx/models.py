@@ -538,14 +538,15 @@ class RotationalDisorder:
     oriented axis with a normally distributed rotation angle.
     """
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, res_limit=0, batch_size=10000, n_processes=8):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1)
+        self._setup(pdb_path, expand_p1, res_limit)
         self.batch_size = batch_size
+        self.n_processes = n_processes 
         
-    def _setup(self, pdb_path, expand_p1):
+    def _setup(self, pdb_path, expand_p1, res_limit=0):
         """
         Compute q-vectors to evaluate.
         
@@ -555,45 +556,23 @@ class RotationalDisorder:
             path to coordinates file of asymmetric unit
         expand_p1 : bool
             if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
+        res_limit : float
+            high-resolution limit in Angstrom
         """
         self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
-        self.q_grid, self.map_shape = generate_grid(self.model.A_inv, 
-                                                    self.hsampling, 
-                                                    self.ksampling, 
-                                                    self.lsampling)
+        hkl_grid, self.map_shape = generate_grid(self.model.A_inv, 
+                                                 self.hsampling, 
+                                                 self.ksampling, 
+                                                 self.lsampling,
+                                                 return_hkl=True)
+        self.q_grid = 2*np.pi*np.inner(self.model.A_inv.T, hkl_grid).T
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
+        self.mask, res_map = get_resolution_mask(self.model.cell, hkl_grid, res_limit)
     
-    @staticmethod
-    def axis_angle_to_quaternion(axis, theta):
-        """
-        Convert an angular rotation around an axis series to quaternions.
-
-        Parameters
-        ----------
-        axis : numpy.ndarray, size (num_pts, 3)
-            axis vector defining rotation
-        theta : numpy.ndarray, size (num_pts)
-            angle in radians defining anticlockwise rotation around axis
-
-        Returns
-        -------
-        quat : numpy.ndarray, size (num_pts, 4)
-            quaternions corresponding to axis/theta rotations
-        """
-        axis /= np.linalg.norm(axis, axis=1)[:,None]
-        angle = theta / 2
-
-        quat = np.zeros((len(theta), 4))
-        quat[:,0] = np.cos(angle)
-        quat[:,1:] = np.sin(angle)[:,None] * axis
-
-        return quat
-
     @staticmethod
     def generate_rotations_around_axis(sigma, num_rot, axis=np.array([0,0,1.0])):
         """
         Generate uniform random rotations about an axis.
-
         Parameters
         ----------
         sigma : float
@@ -602,7 +581,6 @@ class RotationalDisorder:
             number of rotations to generate
         axis : numpy.ndarray, shape (3,)
             axis about which to generate rotations
-
         Returns
         -------
         rot_mat : numpy.ndarray, shape (num, 3, 3)
@@ -651,17 +629,19 @@ class RotationalDisorder:
                 fc = np.zeros(self.q_grid.shape[0], dtype=complex)
                 fc_square = np.zeros(self.q_grid.shape[0])
                 for rnum in range(num_rot):
-                    A = structure_factors(self.q_grid, 
+                    A = structure_factors(self.q_grid[self.mask], 
                                           xyz_rot[rnum], 
                                           self.model.ff_a[asu], 
                                           self.model.ff_b[asu], 
                                           self.model.ff_c[asu], 
                                           U=None, 
-                                          batch_size=10000)
-                    fc += A
-                    fc_square += np.square(np.abs(A)) 
+                                          batch_size=self.batch_size,
+                                          n_processes=self.n_processes)
+                    fc[self.mask] += A
+                    fc_square[self.mask] += np.square(np.abs(A)) 
                 Id[n_sigma] += fc_square / num_rot - np.square(np.abs(fc / num_rot))
 
+        Id[:,~self.mask] = np.nan
         return Id 
     
     def optimize(self, target, sigma_min, sigma_max, n_search=20, num_rot=100):
@@ -700,7 +680,7 @@ class RotationalDisorder:
 
         print(f"Optimal sigma: {self.opt_sigma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas
-
+    
 class EnsembleDisorder:
     
     """
