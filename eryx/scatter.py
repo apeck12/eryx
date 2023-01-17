@@ -27,7 +27,7 @@ def compute_form_factors(q_grid, ff_a, ff_b, ff_c):
     fj = np.sum(fj, axis=1) + ff_c[:,np.newaxis]
     return fj.T
 
-def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
+def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None, sum_over_atoms=True):
     """
     Compute the structure factors for an atomic model at 
     the given q-vectors. 
@@ -46,10 +46,12 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
         c coefficient of atomic form factors
     U : numpy.ndarray, shape (n_atoms,) 
         isotropic displacement parameters
+    sum_over_atoms: boolean
+        True (default) returns summed structure factor.
         
     Returns
     -------
-    A : numpy.ndarray, shape (n_points)
+    A : numpy.ndarray, shape (n_points) or (n_points, n_atoms)
         structure factors at q-vectors
     """
     if U is None:
@@ -61,10 +63,11 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None):
     
     A = 1j * fj * np.sin(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
     A += fj * np.cos(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
-    A = np.sum(A, axis=1)
+    if sum_over_atoms:
+        A = np.sum(A, axis=1)
     return A 
 
-def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None, batch_size=100000, n_processes=8):
+def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None, batch_size=100000, n_processes=8, sum_over_atoms=True):
     """
     Batched version of the structure factor calculation. See 
     docstring for structure_factors_batch for parameters and 
@@ -81,11 +84,11 @@ def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None, batch_size=100000, 
         A = np.zeros(q_grid.shape[0], dtype=np.complex128)
         for batch in range(n_batches):
             q_sel = q_grid[splits[batch]: splits[batch+1]]
-            A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U)    
+            A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U, sum_over_atoms=sum_over_atoms)
     else:
         q_sel = [q_grid[splits[batch]: splits[batch+1]] for batch in range(n_batches)]
         pool = mp.Pool(processes=n_processes)
-        sf_partial = partial(structure_factors_batch, xyz=xyz, ff_a=ff_a, ff_b=ff_b, ff_c=ff_c, U=U)
+        sf_partial = partial(structure_factors_batch, xyz=xyz, ff_a=ff_a, ff_b=ff_b, ff_c=ff_c, U=U, sum_over_atoms=sum_over_atoms)
         A = np.hstack(pool.map(sf_partial, q_sel))
        
     return A
