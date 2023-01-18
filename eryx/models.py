@@ -450,6 +450,29 @@ class LiquidLikeMotions:
                                                                           2*border*self.ksampling[2], 
                                                                           2*border*self.lsampling[2]]))
         
+    def fft_convolve(self, transform, kernel):
+        """ 
+        Convolve the transform and kernel by multiplying their 
+        Fourier transforms. This approach requires less memory 
+        than scipy.signal.fftconvolve.
+
+        Parameters
+        ----------
+        transform : numpy.ndarray, 3d
+            crystal or molecular transform map
+        kernel : numpy.ndarray, 3d
+            disorder kernel, same shape as transform
+
+        Returns
+        -------
+        conv : numpy.ndarray 
+            convolved map
+        """
+        ft_transform = np.fft.fftn(transform)
+        ft_kernel = np.fft.fftn(kernel/kernel.sum()) 
+        ft_conv = ft_transform * ft_kernel
+        return np.fft.ifftshift(np.fft.ifftn(ft_conv).real)
+        
     def apply_disorder(self, sigmas, gammas):
         """
         Compute the diffuse map(s) from the crystal transform as:
@@ -480,7 +503,12 @@ class LiquidLikeMotions:
         Id = np.zeros((len(gammas), self.q_grid.shape[0]))
         kernels = 8.0 * np.pi * (gammas[:,np.newaxis]**3) / np.square(1 + np.square(gammas[:,np.newaxis] * self.q_mags))
         for num in range(len(gammas)):
-            Id[num] = scipy.signal.fftconvolve(self.transform, kernels[num].reshape(self.map_shape), mode='same').flatten()
+            if np.prod(self.map_shape) < 1e7:
+                Id[num] = scipy.signal.fftconvolve(self.transform,
+                                                   kernels[num].reshape(self.map_shape)/np.sum(kernels[num]),
+                                                   mode='same').flatten()
+            else:
+                Id[num] = self.fft_convolve(self.transform, kernels[num].reshape(self.map_shape)).flatten()
         Id = np.tile(Id, (len(sigmas), 1))
 
         # scale with displacement parameters
