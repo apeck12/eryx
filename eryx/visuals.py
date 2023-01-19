@@ -81,7 +81,7 @@ class VisualizeCrystal:
         showlegend : bool, default: False
             Whether the object appears in the legend or not.
         """
-        u_xyz = self.model.unit_cell_axes
+        u_xyz = self.crystal.model.unit_cell_axes
         p_xyz = np.zeros((16, 3))
         p_sign_sequence = [1, 1, -1, 1, 1, -1, -1, 1, -1, -1, 1, 1, -1, 1, 1]
         p_id_sequence = [2, 1, 2, 0, 2, 0, 1, 0, 2, 0, 1, 0, 1, 2, 1]
@@ -164,4 +164,4 @@ class VisualizeCrystal:
         else:
             color_dict = mcolors.CSS4_COLORS
         color_array = np.array(list(color_dict.items()))
-        return color_array[::color_array.shape[0]/ndx,1][idx]
+        return color_array[::color_array.shape[0]//ndx,1][idx]
