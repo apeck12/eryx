@@ -316,3 +316,127 @@ class AtomicModel:
         self.ff_b = np.tile(self.ff_b, (n_asu, 1, 1))
         self.ff_c = np.tile(self.ff_c, (n_asu, 1))
         self.elements = n_asu * self.elements
+
+
+class Crystal:
+
+    def __init__(self, atomic_model):
+        """
+        Parameters
+        ----------
+        atomic_model : an eryx.models.AtomicModel object
+        """
+        self.model = atomic_model
+        self.supercell_extent()
+
+    def supercell_extent(self, nx=0, ny=0, nz=0):
+        """
+        Define supercell dimensions. There will be nx cells on
+        each +X and -X side of the reference cell, for a total
+        of 2*nx + 1 cells along the X dimension. Same logic
+        follows for the two other dimensions.
+
+        Parameters
+        ----------
+        nx : integer
+        ny : integer
+        nz : integer
+        """
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz
+        self.xrange = np.arange(-self.nx, self.nx + 1, 1)
+        self.yrange = np.arange(-self.ny, self.ny + 1, 1)
+        self.zrange = np.arange(-self.nz, self.nz + 1, 1)
+        self.n_cell = (2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1)
+
+    def get_unitcell_origin(self, unit_cell=None):
+        """
+        Convert unit cell indices to spatial location of its origin.
+
+        Parameters
+        ----------
+        unit_cell : list of 3 integer indices. Default: [0,0,0].
+            index of the unit cell along the 3 dimensions.
+
+        Returns
+        -------
+        origin : numpy.ndarray, shape (3,)
+            location of the unit cell origin (in Angstrom)
+        """
+        if unit_cell is None:
+            unit_cell = [0, 0, 0]
+        origin = np.zeros(3)
+        for i in range(3):
+            origin += unit_cell[i] * self.model.unit_cell_axes[i]
+        return origin
+
+    def _hkl_to_id(self, unit_cell=None):
+        """
+        Return unit cell index given its indices in the supercell.
+
+        Parameters
+        ----------
+        unit_cell : list of 3 integer indices. Default: [0,0,0].
+            index of the unit cell along the 3 dimensions.
+
+        Returns
+        -------
+        cell_id : integer
+            index of the unit cell in the supercell
+        """
+        if unit_cell is None:
+            unit_cell = [0, 0, 0]
+        icell = 0
+        for h in self.xrange:
+            for k in self.yrange:
+                for l in self.zrange:
+                    if h == unit_cell[0] and k == unit_cell[1] and l == unit_cell[2]:
+                        cell_id = icell
+                    icell += 1
+        return cell_id
+
+    def _id_to_hkl(self, cell_id=0):
+        """
+        Return unit cell indices in supercell given its index.
+
+        Parameters
+        ----------
+        cell_id : integer. Default: 0.
+
+        Returns
+        -------
+        unit_cell : list of 3 integer indices.
+            Index of the unit cell along the 3 dimensions.
+
+        """
+        icell = 0
+        for h in self.xrange:
+            for k in self.yrange:
+                for l in self.zrange:
+                    if icell == cell_id:
+                        unit_cell = [h, k, l]
+                    icell += 1
+        return unit_cell
+
+    def get_asu_xyz(self, asu_id=0, unit_cell=None):
+        """
+
+        Parameters
+        ----------
+        asu_id : integer. Default: 0.
+            Asymmetric unit index.
+        unit_cell : list of 3 integer indices.
+            Index of the unit cell along the 3 dimensions.
+
+        Returns
+        -------
+        xyz : numpy.ndarray, shape (natoms, 3)
+            atomic coordinate for this asu in given unit cell.
+
+        """
+        if unit_cell is None:
+            unit_cell = [0, 0, 0]
+        xyz = self.model._get_xyz_asus(self.model.xyz[0])[asu_id]  # get asu
+        xyz += self.get_unitcell_origin(unit_cell)  # move to unit cell
+        return xyz
