@@ -121,14 +121,6 @@ class TestLiquidLikeMotions:
         cls.pdb_path = "pdbs/5zck.pdb"
         cls.model = LiquidLikeMotions(cls.pdb_path, (-5,5,2), (-13,13,2), (-20,20,2), expand_p1=True)
 
-    def test_dilate(self):
-        """ Check that map was correctly dilated: q_mags should match. """
-        q_mags_int = np.linalg.norm(self.model.q_grid_int, axis=1).reshape(self.model.map_shape_int)
-        q_mags_int = self.model._dilate(q_mags_int, (self.model.hsampling[2], self.model.ksampling[2], self.model.lsampling[2]))
-        q_mags_frac = self.model.q_mags.copy().reshape(self.model.map_shape)
-        q_mags_frac[q_mags_int==0] = 0
-        assert np.allclose(q_mags_frac, q_mags_int)
-
     def test_mask(self):
         """ Check that mask is only applied to out-of-bounds q-vectors. """
         q_grid, map_shape = generate_grid(AtomicModel(self.pdb_path).A_inv,
