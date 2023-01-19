@@ -639,7 +639,7 @@ class RotationalDisorder:
         rot_mat = scipy.spatial.transform.Rotation.from_rotvec(rot_vec).as_matrix()
         return rot_mat
     
-    def apply_disorder(self, sigmas, num_rot=100):
+    def apply_disorder(self, sigmas, num_rot=100, sf_out=None):
         """
         Compute the diffuse maps(s) resulting from rotational disorder for 
         the given sigmas by applying Guinier's equation to an ensemble of 
@@ -652,7 +652,9 @@ class RotationalDisorder:
             standard deviation(s) of angular sampling in degrees
         num_rot : int
             number of rotations to generate per sigma
-        
+        sf_out : str
+            save select (unmasked) structure factor amplitudes to given path
+
         Returns
         -------
         Id : numpy.ndarray, (n_sigma, q_grid.shape[0])
@@ -682,6 +684,9 @@ class RotationalDisorder:
                                           U=None, 
                                           batch_size=self.batch_size,
                                           n_processes=self.n_processes)
+                    if sf_out is not None:
+                        np.save(sf_out, A)
+                        return
                     fc[self.mask] += A
                     fc_square[self.mask] += np.square(np.abs(A)) 
                 Id[n_sigma] += fc_square / num_rot - np.square(np.abs(fc / num_rot))
