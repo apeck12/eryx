@@ -68,7 +68,7 @@ class VisualizeCrystal:
                     self.draw_unit_cell_axes(origin=self.crystal.get_unitcell_origin(unit_cell=[h,k,l]))
                     for i_asu in np.arange(self.crystal.model.n_asu):
                         self.draw_asu(i_asu, unit_cell=[h,k,l],
-                                      name=f'Cell #{self.crystal._hkl_to_id(unit_cell=[h,k,l])} | ASU #{i_asu}')
+                                      name=f'Cell #{self.crystal.hkl_to_id(unit_cell=[h,k,l])} | ASU #{i_asu}')
 
     def draw_unit_cell_axes(self, origin=np.array([0., 0., 0.]), showlegend=False):
         """
@@ -155,7 +155,7 @@ class VisualizeCrystal:
             idx = asu_id
             ndx = self.crystal.model.n_asu
         elif self.color_by == 'unit_cell':
-            idx = self.crystal._hkl_to_id(unit_cell)
+            idx = self.crystal.hkl_to_id(unit_cell)
             ndx = self.crystal.n_cell
         if self.color_palette == 'xkcd':
             color_dict = mcolors.XKCD_COLORS

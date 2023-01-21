@@ -1,5 +1,6 @@
 import numpy as np
 import gemmi
+from scipy.spatial import KDTree
 
 def sym_str_as_matrix(sym_str):
     """
@@ -193,6 +194,7 @@ class AtomicModel:
             pdb frame to extract; if -1, extract all frames
         """
         self.ff_a, self.ff_b, self.ff_c = None, None, None
+        self.adp = None
         self.elements = []
         self.xyz = None
 
@@ -206,6 +208,7 @@ class AtomicModel:
             model = self.structure[fr]
             residues = [res for ch in model for res in ch]
             self._extract_xyz(residues, expand_p1)
+            self._extract_adp(residues, expand_p1)
             self._extract_ff_coefs(residues, expand_p1)
         
     def _get_xyz_asus(self, xyz):
@@ -260,6 +263,28 @@ class AtomicModel:
             self.xyz = xyz
         else:
             self.xyz = np.vstack((self.xyz, xyz))
+
+    def _extract_adp(self, residues, expand_p1):
+        """
+        Retrieve atomic displacement parameters.
+
+        Parameters
+        ----------
+        residues : list of gemmi.Residue objects
+            residue objects containing atomic position information
+        expand_p1 : bool
+            if True, expand to all asymmetric units
+        """
+        adp = np.array([[atom.b_iso for res in residues for atom in res]])
+
+        if self.adp is None:
+            self.adp = adp
+        else:
+            self.adp = np.vstack((self.adp, adp))
+
+        if expand_p1:
+            n_asu = self.xyz.shape[0]
+            self.adp = np.tile(self.adp, (n_asu, 1))
     
     def _extract_ff_coefs(self, residues, expand_p1):
         """
@@ -371,7 +396,7 @@ class Crystal:
             origin += unit_cell[i] * self.model.unit_cell_axes[i]
         return origin
 
-    def _hkl_to_id(self, unit_cell=None):
+    def hkl_to_id(self, unit_cell=None):
         """
         Return unit cell index given its indices in the supercell.
 
@@ -396,7 +421,7 @@ class Crystal:
                     icell += 1
         return cell_id
 
-    def _id_to_hkl(self, cell_id=0):
+    def id_to_hkl(self, cell_id=0):
         """
         Return unit cell indices in supercell given its index.
 
@@ -440,3 +465,184 @@ class Crystal:
         xyz = self.model._get_xyz_asus(self.model.xyz[0])[asu_id]  # get asu
         xyz += self.get_unitcell_origin(unit_cell)  # move to unit cell
         return xyz
+
+class GaussianNetworkModel:
+    def __init__(self, pdb_path, enm_cutoff, gamma_intra, gamma_inter):
+        self._setup_atomic_model(pdb_path)
+        self.enm_cutoff = enm_cutoff
+        self.gamma_inter = gamma_inter
+        self.gamma_intra = gamma_intra
+        self._setup_gaussian_network_model()
+
+    def _setup_atomic_model(self, pdb_path):
+        """
+        Build unit cell and its nearest neighbors while
+        storing useful dimensions.
+
+        Parameters
+        ----------
+        pdb_path : str
+            path to coordinates file of asymmetric unit
+        """
+        atomic_model = AtomicModel(pdb_path, expand_p1=True)
+        self.crystal = Crystal(atomic_model)
+        self.crystal.supercell_extent(nx=1, ny=1, nz=1)
+        self.id_cell_ref = self.crystal.hkl_to_id([0,0,0])
+        self.n_cell = self.crystal.n_cell
+        self.n_asu = self.crystal.model.n_asu
+        self.n_atoms_per_asu = self.crystal.get_asu_xyz().shape[0]
+        self.n_dof_per_asu_actual = self.n_atoms_per_asu * 3
+
+    def _setup_gaussian_network_model(self):
+        """
+        Build interaction pair list and spring constant.
+        """
+        self.build_gamma()
+        self.build_neighbor_list()
+
+    def build_gamma(self):
+        """
+        The spring constant gamma dictates the interaction strength
+        between pairs of atoms. It is defined across the main unit
+        cell and its neighbors, for each asymmetric unit, resulting
+        in an array of shape (n_cell, n_asu, n_asu).
+        The spring constant between atoms belonging to different asus
+        can be set to a different value than that for intra-asus atoms.
+        """
+        self.gamma = np.zeros((self.n_cell, self.n_asu, self.n_asu))
+        for i_asu in range(self.n_asu):
+            for i_cell in range(self.n_cell):
+                for j_asu in range(self.n_asu):
+                    self.gamma[i_cell, i_asu, j_asu] = self.gamma_inter
+                    if (i_cell == self.id_cell_ref) and (j_asu == i_asu):
+                        self.gamma[i_cell, i_asu, j_asu] = self.gamma_intra
+
+    def build_neighbor_list(self):
+        """
+        Returns the list asu_neighbors[i_asu][i_cell][j_asu]
+        of atom pairs between the ASU i_asu from the reference cell
+        and ASU j_asu from the cell i_cell. The length of the returned
+        list is the number of atoms in one ASU.
+        For each atom i in the ASU i_asu in the reference cell,
+        asu_neighbors[i_asu][i_cell][j_asu][i] returns the indices of
+        its neighbors, if any, in the ASU j_asu in cell i_cell.
+        """
+        self.asu_neighbors = []
+
+        for i_asu in range(self.n_asu):
+            self.asu_neighbors.append([])
+            kd_tree1 = KDTree(self.crystal.get_asu_xyz(i_asu, self.crystal.id_to_hkl(self.id_cell_ref)))
+
+            for i_cell in range(self.n_cell):
+                self.asu_neighbors[i_asu].append([])
+
+                for j_asu in range(self.n_asu):
+                    self.asu_neighbors[i_asu][i_cell].append([])
+                    kd_tree2 = KDTree(self.crystal.get_asu_xyz(j_asu, self.crystal.id_to_hkl(i_cell)))
+
+                    self.asu_neighbors[i_asu][i_cell][j_asu] = kd_tree1.query_ball_tree(kd_tree2, r=self.enm_cutoff)
+
+    def compute_hessian(self):
+        """
+        For a pair of atoms the Hessian in a GNM is defined as:
+        1. i not j and dij =< cutoff: -gamma_ij
+        2. i not j and dij > cutoff: 0
+        3. i=j: -sum_{j not i} hessian_ij
+
+        Returns
+        -------
+        hessian: numpy.ndarray,
+                 shape (n_asu, n_atoms_per_asu,
+                        n_cell, n_asu, n_atoms_per_asu)
+                 type 'complex'
+            - dimension 0: index ASUs in reference cell
+            - dimension 1: index their atoms
+            - dimension 2: index neighbor cells
+            - dimension 3: index ASUs in neighbor cell
+            - dimension 4: index atoms in neighbor ASU
+        """
+        hessian = np.zeros((self.n_asu, self.n_atoms_per_asu,
+                            self.n_cell, self.n_asu, self.n_atoms_per_asu),
+                           dtype='complex')
+        hessian_diagonal = np.zeros((self.n_asu, self.n_atoms_per_asu),
+                                    dtype='complex')
+
+        # off-diagonal
+        for i_asu in range(self.n_asu):
+            for i_cell in range(self.n_cell):
+                for j_asu in range(self.n_asu):
+                    for i_at in range(self.n_atoms_per_asu):
+                        iat_neighbors = self.asu_neighbors[i_asu][i_cell][j_asu][i_at]
+                        if len(iat_neighbors) > 0:
+                            hessian[i_asu, i_at, i_cell, j_asu, iat_neighbors] = -self.gamma[i_cell, i_asu, j_asu]
+                            hessian_diagonal[i_asu, i_at] -= self.gamma[i_cell, i_asu, j_asu] * len(iat_neighbors)
+
+        # diagonal (also correct for over-counted self term)
+        for i_asu in range(self.n_asu):
+            for i_at in range(self.n_atoms_per_asu):
+                hessian[i_asu, i_at, self.id_cell_ref, i_asu, i_at] = -hessian_diagonal[i_asu, i_at] - self.gamma[
+                    self.id_cell_ref, i_asu, i_asu]
+
+        return hessian
+
+    def compute_K(self, hessian, kvec=None):
+        """
+        Noting H(d) the block of the hessian matrix
+        corresponding the the d-th reference cell
+        whose origin is located at r_d, then:
+        K(kvec) = \sum_d H(d) exp(i kvec. r_d)
+
+        Parameters
+        ----------
+        hessian : numpy.ndarray, see compute_hessian()
+        kvec : numpy.ndarray, shape (3,)
+            phonon wavevector, default array([0.,0.,0.])
+
+        Returns
+        -------
+        Kmat : numpy.ndarray,
+               shape (n_asu, n_atoms_per_asu,
+                      n_asu, n_atoms_per_asu)
+               type 'complex'
+        """
+        if kvec is None:
+            kvec = np.zeros(3)
+        Kmat = hessian[:, :, self.id_cell_ref, :, :]
+
+        for j_cell in range(self.n_cell):
+            if j_cell == self.id_cell_ref:
+                continue
+            r_cell = self.crystal.get_unitcell_origin(self.crystal.id_to_hkl(j_cell))
+            phase = np.dot(kvec, r_cell)
+            eikr = np.cos(phase) + 1j * np.sin(phase)
+            for i_asu in range(self.n_asu):
+                for j_asu in range(self.n_asu):
+                    Kmat[i_asu, :, j_asu, :] += hessian[i_asu, :, j_cell, j_asu, :] * eikr
+        return Kmat
+
+    def compute_Kinv(self, hessian, kvec=None):
+        """
+        Compute the inverse of K(kvec)
+        (see compute_K() for the relationship between K and the hessian).
+
+        Parameters
+        ----------
+        hessian : numpy.ndarray, see compute_hessian()
+        kvec : numpy.ndarray, shape (3,)
+            phonon wavevector, default array([0.,0.,0.])
+
+        Returns
+        -------
+        Kinv : numpy.ndarray,
+               shape (n_asu, n_atoms_per_asu,
+                      n_asu, n_atoms_per_asu)
+               type 'complex'
+        """
+        if kvec is None:
+            kvec = np.zeros(3)
+        Kmat = self.compute_K(hessian, kvec=kvec)
+        Kinv = np.linalg.pinv(Kmat.reshape(self.n_asu * self.n_atoms_per_asu,
+                                           self.n_asu * self.n_atoms_per_asu))
+        Kinv = Kinv.reshape((self.n_asu, self.n_atoms_per_asu,
+                             self.n_asu, self.n_atoms_per_asu))
+        return Kinv
