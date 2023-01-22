@@ -990,10 +990,10 @@ class NonInteractingDeformableMolecules:
             Jq = np.power(Tmat,
                           self.q2_unique[self.q2_unique_inverse][iq]) - 1.
             for i_asu in range(self.model.n_asu):
-                Id[iq] = np.matmul(F[i_asu,iq],
+                Id[iq] += np.matmul(F[i_asu,iq],
                                    np.matmul(Jq,
                                              np.conj(F[i_asu,iq])))
-        return Id
+        return np.real(Id)
 
     def apply_disorder(self, scl=True):
         """
