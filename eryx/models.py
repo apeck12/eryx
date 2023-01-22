@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal
 import scipy.spatial
-from .pdb import AtomicModel
+from .pdb import AtomicModel, GaussianNetworkModel
 from .map_utils import *
 from .scatter import structure_factors
 from .stats import compute_cc
@@ -810,4 +810,168 @@ class EnsembleDisorder:
             for nm in range(n_maps):
                 Id[nm] += fc_square[nm] - np.square(np.abs(fc[nm]))
                 
+        return Id
+
+class NonInteractingDeformableMolecules:
+
+    """
+    Lattice model with non-interacting deformable molecules.
+    Each asymmetric unit is a Gaussian Network Model.
+    """
+
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling,
+                 expand_p1=True, res_limit=0, gnm_cutoff=4.,
+                 batch_size=10000, n_processes=8):
+        self.hsampling = hsampling
+        self.ksampling = ksampling
+        self.lsampling = lsampling
+        self.batch_size = batch_size
+        self.n_processes = n_processes
+        self._setup(pdb_path, expand_p1, res_limit)
+        self._setup_gnm(pdb_path, gnm_cutoff)
+
+    def _setup(self, pdb_path, expand_p1, res_limit, q2_rounding=3):
+        """
+        Compute q-vectors to evaluate.
+
+        Parameters
+        ----------
+        pdb_path : str
+            path to coordinates file of asymmetric unit
+        res_limit : float
+            high-resolution limit in Angstrom
+        q2_rounding : int
+            number of decimals to round q squared to, default: 3
+        """
+        self.model = AtomicModel(pdb_path, expand_p1=expand_p1)
+
+        hkl_grid, self.map_shape = generate_grid(self.model.A_inv,
+                                                 self.hsampling,
+                                                 self.ksampling,
+                                                 self.lsampling,
+                                                 return_hkl=True)
+        self.res_mask, res_map = get_resolution_mask(self.model.cell,
+                                                     hkl_grid,
+                                                     res_limit)
+        self.q_grid = 2 * np.pi * np.inner(self.model.A_inv.T, hkl_grid).T
+
+        q2 = np.linalg.norm(self.q_grid, axis=1) ** 2
+        self.q2_unique, \
+        self.q2_unique_inverse = np.unique(np.round(q2, q2_rounding),
+                                           return_inverse=True)
+
+    def _setup_gnm(self, pdb_path, gnm_cutoff):
+        """
+        Build Gaussian Network Model.
+
+        Parameters
+        ----------
+        pdb_path : str
+            path to coordinates file of asymmetric unit
+        gnm_cutoff : float
+            distance cutoff used to define atom pairs
+        """
+        self.gnm = GaussianNetworkModel(pdb_path,
+                                        enm_cutoff=gnm_cutoff,
+                                        gamma_intra=1.,
+                                        gamma_inter=0.)
+
+    def compute_covariance_matrix(self):
+        """
+        Compute covariance matrix for one asymmetric unit.
+        The covariance matrix results from modelling pairwise
+        interactions with a Gaussian Network Model where atom
+        pairs belonging to different asymmetric units are not
+        interacting. It is scaled to match the ADPs in the input PDB file.
+        """
+        Kinv = self.gnm.compute_Kinv(self.gnm.compute_hessian())
+        Kinv = np.real(Kinv[0, :, 0, :])  # only need that
+        ADP_scale = np.mean(self.model.adp[0]) / \
+                    (8 * np.pi * np.pi * np.mean(np.diag(Kinv)) / 3.)
+        self.covar = Kinv * ADP_scale
+        self.ADP = np.diag(self.covar)
+
+    def _low_rank_truncation(self, sym_matrix, rank=None, rec_error_threshold=0.01):
+        """
+        Perform low rank approximation of a symmetric matrix.
+        Either the desired rank is provided, or it is found
+        when the reconstructed matrix Froebenius norm is the
+        same as the original matrix, up to a provided
+        reconstruction error.
+
+        Parameters
+        ----------
+        sym_matrix : numpy.ndarray, shape (n, n)
+            must be a 2D symmetric array
+        rank : int or None
+            if not None, the desired rank
+        rec_error_threshold : float
+            if rank is None, the maximal reconstruction error
+        Returns
+        -------
+        u : numpy.ndarray, shape (n, rank)
+            First rank-th components of sym_matrix
+        s : numpy.ndarray, shape (rank,)
+            First rank-th singular values of sym_matrix
+        """
+        u, s, vh = np.linalg.svd(sym_matrix)
+        if rank is None:
+            sym_matrix_norm = np.linalg.norm(sym_matrix)
+            for rank in range(s.shape[0]):
+                rec_matrix = (u[:, :rank] * s[:rank]) @ vh[:rank, :]
+                rec_matrix_norm = np.linalg.norm(rec_matrix)
+                rec_error = 1. - rec_matrix_norm / sym_matrix_norm
+                if rec_error < rec_error_threshold:
+                    break
+        return u[:, :rank], s[:rank]
+
+    def compute_scl_intensity(self):
+        """
+        Compute diffuse intensity of non-interacting deformable
+        molecules, in the soft-coupling limit.
+        Namely, given a Gaussian Network Model (GNM) for the
+        asymmetric unit (ASU), the covariance C is factorized:
+        C = B * D @ B.T and eventually low-rank truncated.
+        The diffuse intensity is then the incoherent sum over
+        its components, weighted by q**2, where we introduce
+        the component factors G = F * B:
+        I(q) = q**2 \sum_r D_r \sum_asu |G_asu,r|**2
+        """
+        Id = np.zeros((self.q_grid.shape[0]))
+        self.compute_covariance_matrix()
+        u, s = self._low_rank_truncation(self.covar)
+        for i_asu in range(self.model.n_asu):
+            Id += np.dot(np.square(np.abs(structure_factors(self.q_grid,
+                                                           self.model.xyz[i_asu],
+                                                           self.model.ff_a[i_asu],
+                                                           self.model.ff_b[i_asu],
+                                                           self.model.ff_c[i_asu],
+                                                           U=self.ADP,
+                                                           batch_size=self.batch_size,
+                                                           n_processes=self.n_processes,
+                                                           project_on_components=u,
+                                                           sum_over_atoms=False))), s)
+        return np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
+
+    def apply_disorder(self, scl=True):
+        """
+        Compute diffuse intensity of non-interacting deformable
+        molecules.
+        Namely, given a Gaussian Network Model (GNM) for the
+        asymmetric unit (ASU), the covariance C between atomic
+        displacements is computed. Then the coupling between
+        structure factors F can be defined as J = exp(q2*C) - 1.
+        The diffuse intensity is then the incoherent sum over
+        asymmetric units: Id = \sum_asu F_asu.T J F_asu.
+        Because computing this in the general case would not
+        scale well, several approximations/simplifications are
+        offered (at the moment, only the soft-coupling limit).
+
+        Parameters
+        ----------
+        scl : bool
+            whether we are in the soft-coupling limit or not.
+        """
+        if scl:
+            Id = self.compute_scl_intensity()
         return Id
