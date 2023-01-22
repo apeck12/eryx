@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.signal
 import scipy.spatial
+from tqdm import tqdm
 from .pdb import AtomicModel, GaussianNetworkModel
 from .map_utils import *
 from .scatter import structure_factors
@@ -953,6 +954,47 @@ class NonInteractingDeformableMolecules:
                                                            sum_over_atoms=False))), s)
         return np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
 
+    def compute_intensity_naive(self):
+        """
+        Compute diffuse intensity of non-interacting deformable
+        molecules in a non-efficient / naive way.
+        Namely, given a Gaussian Network Model (GNM) for the
+        asymmetric unit (ASU), we can compute its covariance C
+        and for each q and each atom pair T_ij(q) = exp(q**2 C_ij).
+        Noting F_i(q) the structure factor for atom i, the
+        contribution of one ASU to the intensity reads:
+        I(q) = \sum_ij F_i(q) (T_ij(q) - 1.) F_j(q)
+        The diffuse intensity is an incoherent sum over ASUs.
+        """
+        Id = np.zeros((self.q_grid.shape[0]), dtype='complex')
+
+        self.compute_covariance_matrix()
+        Tmat = np.exp(self.covar).astype(complex)
+
+        F = np.zeros((self.model.n_asu,
+                      self.q_grid.shape[0],
+                      self.gnm.n_atoms_per_asu),
+                     dtype='complex')
+        for i_asu in range(self.model.n_asu):
+            F[i_asu] = structure_factors(self.q_grid,
+                                         self.model.xyz[i_asu],
+                                         self.model.ff_a[i_asu],
+                                         self.model.ff_b[i_asu],
+                                         self.model.ff_c[i_asu],
+                                         U=self.ADP,
+                                         batch_size=self.batch_size,
+                                         n_processes=self.n_processes,
+                                         sum_over_atoms=False)
+
+        for iq in tqdm(range(self.q_grid.shape[0])):
+            Jq = np.power(Tmat,
+                          self.q2_unique[self.q2_unique_inverse][iq]) - 1.
+            for i_asu in range(self.model.n_asu):
+                Id[iq] = np.matmul(F[i_asu,iq],
+                                   np.matmul(Jq,
+                                             np.conj(F[i_asu,iq])))
+        return Id
+
     def apply_disorder(self, scl=True):
         """
         Compute diffuse intensity of non-interacting deformable
@@ -974,4 +1016,6 @@ class NonInteractingDeformableMolecules:
         """
         if scl:
             Id = self.compute_scl_intensity()
+        else:
+            Id = self.compute_intensity_naive()
         return Id
