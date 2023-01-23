@@ -1,6 +1,8 @@
 import numpy as np
 import scipy.signal
 import scipy.spatial
+import glob
+import os
 from tqdm import tqdm
 from .pdb import AtomicModel, GaussianNetworkModel
 from .map_utils import *
@@ -450,6 +452,11 @@ class LiquidLikeMotions:
         self.map_shape_nopad = tuple(np.array(self.map_shape) - np.array([2*border*self.hsampling[2], 
                                                                           2*border*self.ksampling[2], 
                                                                           2*border*self.lsampling[2]]))
+
+        # empty lists to populate with all sigmas/gammas that have been scanned
+        self.scan_sigmas = []
+        self.scan_gammas = []
+        self.scan_ccs = []
         
     def fft_convolve(self, transform, kernel):
         """ 
@@ -473,7 +480,35 @@ class LiquidLikeMotions:
         ft_kernel = np.fft.fftn(kernel/kernel.sum()) 
         ft_conv = ft_transform * ft_kernel
         return np.fft.ifftshift(np.fft.ifftn(ft_conv).real)
-        
+
+    def plot_scan(self, output=None):
+        """
+        Plot a heatmap of the overall correlation coefficient
+        as a function of sigma and gamma.
+        Parameters
+        ----------
+        output : str
+            if provided, save plot to given path
+        """
+        import matplotlib.pyplot as plt
+
+        sigmas = np.array(self.scan_sigmas)
+        gammas = np.array(self.scan_gammas)
+        ccs = np.array(self.scan_ccs)
+
+        xi = np.linspace(sigmas.min(), sigmas.max(), 25)
+        yi = np.linspace(gammas.min(), gammas.max(), 25)
+        zi = scipy.interpolate.griddata((sigmas, gammas), ccs, (xi[None,:], yi[:,None]), method='cubic')
+
+        plt.contourf(xi,yi,zi,25,linewidths=0.5)
+        plt.xlabel("$\sigma$ ($\mathrm{\AA}$)", fontsize=14)
+        plt.ylabel("$\gamma$ ($\mathrm{\AA}$)", fontsize=14)
+        cb = plt.colorbar()
+        cb.ax.set_ylabel("CC", fontsize=14)
+
+        if output is not None:
+            plt.savefig(output, dpi=300, bbox_inches='tight')
+    
     def apply_disorder(self, sigmas, gammas):
         """
         Compute the diffuse map(s) from the crystal transform as:
@@ -566,13 +601,17 @@ class LiquidLikeMotions:
         Id = Id[:,self.mask.flatten()==1]
         ccs = compute_cc(Id, np.expand_dims(target.flatten(), axis=0))
         opt_index = np.argmax(ccs)
-        self.opt_map = Id[opt_index].reshape(self.map_shape_nopad)
+        if self.scan_ccs and np.max(ccs) > np.max(np.array(self.scan_ccs)):
+            self.opt_map = Id[opt_index].reshape(self.map_shape_nopad)
         
         sigmas = np.repeat(sigmas, len(gammas), axis=0)
-        gammas = np.tile(gammas, len(sigmas))
+        gammas = np.tile(gammas, int(len(sigmas)/len(gammas)))
         self.opt_sigma = sigmas[opt_index]
         self.opt_gamma = gammas[opt_index]
-
+        self.scan_sigmas.extend(list(sigmas))
+        self.scan_gammas.extend(list(gammas))
+        self.scan_ccs.extend(list(ccs))
+        
         print(f"Optimal sigma: {self.opt_sigma}, optimal gamma: {self.opt_gamma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas, gammas
     
