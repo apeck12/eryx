@@ -136,7 +136,8 @@ def compute_resolution(cell, hkl):
     n2b = 2.0*l*h*(np.cos(gamma)*np.cos(alpha) - np.cos(beta))/(c*a)
     n2c = 2.0*h*k*(np.cos(alpha)*np.cos(beta) - np.cos(gamma))/(a*b)
 
-    return 1.0 / np.sqrt((n1 + n2a + n2b + n2c) / pf)
+    with np.errstate(divide='ignore'):
+        return 1.0 / np.sqrt((n1 + n2a + n2b + n2c) / pf)
 
 def get_hkl_extents(cell, resolution, oversampling=1):
     """
