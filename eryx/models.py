@@ -278,7 +278,7 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
     I = np.sum(I_sym, axis=0)
     return I
 
-class TranslationalDisorder:
+class RigidBodyTranslations:
     
     def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
         self.hsampling = hsampling
@@ -615,7 +615,7 @@ class LiquidLikeMotions:
         print(f"Optimal sigma: {self.opt_sigma}, optimal gamma: {self.opt_gamma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas, gammas
     
-class RotationalDisorder:
+class RigidBodyRotations:
     
     """
     Model of rigid body rotational disorder, in which all atoms in 
@@ -771,7 +771,7 @@ class RotationalDisorder:
         print(f"Optimal sigma: {self.opt_sigma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas
     
-class EnsembleDisorder:
+class Ensemble:
     
     """
     Model of ensemble disorder, in which the components of the

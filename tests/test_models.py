@@ -90,13 +90,13 @@ class TestMolecularTransform:
         hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, (0,15,2), expand_friedel=True, res_limit=self.dmin[case])
         assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
         
-class TestTranslationalDisorder:
+class TestRigidBodyTranslations:
     """
     Check translational disorder model.
     """
     def setup_class(cls):
         pdb_path = "pdbs/5zck.pdb"
-        cls.model = TranslationalDisorder(pdb_path, (-4,4,1), (-17,17,1), (-29,29,1))
+        cls.model = RigidBodyTranslations(pdb_path, (-4,4,1), (-17,17,1), (-29,29,1))
         
     def test_anisotropic_sigma(self):
         """ Check that maps with the same (an)isotropic sigma match. """
@@ -142,13 +142,13 @@ class TestLiquidLikeMotions:
         assert gammas[np.argmin(np.abs(gammas - g))] == self.model.opt_gamma
         assert sigmas[np.argmin(np.abs(sigmas - s))] == self.model.opt_sigma
 
-class TestRotationalDisorder:
+class TestRigidBodyRotations:
     """
     Check the rotational disorder model.
     """
     def setup_class(cls):
         pdb_path = "pdbs/2ol9.pdb"
-        cls.model = RotationalDisorder(pdb_path, (-14,14,1), (-5,5,1), (-15,15,1))
+        cls.model = RigidBodyRotations(pdb_path, (-14,14,1), (-5,5,1), (-15,15,1))
 
     def test_optimize(self):
         """ Check that optimization identifies the correct sigma. """
