@@ -152,7 +152,7 @@ class TestRotationalDisorder:
 
     def test_optimize(self):
         """ Check that optimization identifies the correct sigma. """
-        param = float(np.random.choice(np.linspace(1.0,3.0,3)))
+        param = float(np.random.choice(np.linspace(1.0,5.0,3)))
         target = self.model.apply_disorder(param)[0].reshape(self.model.map_shape)
-        self.model.optimize(target, 1.0, 3.0, n_search=3)
+        self.model.optimize(target, 1.0, 5.0, n_search=3)
         assert self.model.opt_sigma == param
