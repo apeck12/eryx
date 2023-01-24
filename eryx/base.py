@@ -2,7 +2,7 @@ import numpy as np
 import glob
 import os
 
-def reconstruct(ensemble_dir, n_grid_points, res_mask, n_asu):
+def guinier_reconstruct(ensemble_dir, n_grid_points, res_mask, n_asu):
     """
     Reconstruct a map from an ensemble of complex structure factors
     using Guinier's equation. The ensemble directory should contain
