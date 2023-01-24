@@ -746,7 +746,7 @@ class RigidBodyRotations:
                                           batch_size=self.batch_size,
                                           n_processes=self.n_processes)
                     if ensemble_dir is not None:
-                        np.save(os.path.join(ensemble_dir, out_prefix + f"_asu{asu}.npy") A)
+                        np.save(os.path.join(ensemble_dir, out_prefix + f"_asu{asu}.npy"), A)
                     fc[self.mask] += A
                     fc_square[self.mask] += np.square(np.abs(A)) 
                 Id[n_sigma] += fc_square / num_rot - np.square(np.abs(fc / num_rot))
