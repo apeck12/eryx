@@ -733,16 +733,16 @@ class NonInteractingDeformableMolecules:
         self.compute_covariance_matrix()
         u, s = self._low_rank_truncation(self.covar)
         for i_asu in range(self.model.n_asu):
-            Id += np.dot(np.square(np.abs(structure_factors(self.q_grid,
-                                                           self.model.xyz[i_asu],
-                                                           self.model.ff_a[i_asu],
-                                                           self.model.ff_b[i_asu],
-                                                           self.model.ff_c[i_asu],
-                                                           U=self.ADP,
-                                                           batch_size=self.batch_size,
-                                                           n_processes=self.n_processes,
-                                                           project_on_components=u,
-                                                           sum_over_atoms=False))), s)
+            Id[self.res_mask] += np.dot(np.square(np.abs(structure_factors(self.q_grid[self.res_mask],
+                                                                           self.model.xyz[i_asu],
+                                                                           self.model.ff_a[i_asu],
+                                                                           self.model.ff_b[i_asu],
+                                                                           self.model.ff_c[i_asu],
+                                                                           U=self.ADP,
+                                                                           batch_size=self.batch_size,
+                                                                           n_processes=self.n_processes,
+                                                                           project_on_components=u,
+                                                                           sum_over_atoms=False))), s)
         return np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
 
     def compute_intensity_naive(self):
