@@ -388,20 +388,23 @@ class LiquidLikeMotions:
     Model in which collective motions decay exponentially with distance
     across the crystal. Mathematically the predicted diffuse scattering 
     is the convolution between the crystal transform and a disorder kernel.
+    In the asu_confined regime, disorder is confined to the asymmetric unit
+    and the convolution is with the molecular rather than crystal transform.
     """
     
     def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
-                 border=1, res_limit=0, batch_size=5000, n_processes=8):
+                 border=1, res_limit=0, batch_size=5000, n_processes=8, asu_confined=False):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, n_processes)
+        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, n_processes, asu_confined)
                 
-    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, n_processes):
+    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, n_processes, asu_confined):
         """
-        Set up class, including calculation of the crystal transform.
-        The transform can be evaluated to a higher resolution so that
-        the edge of the disorder map doesn't encounter a boundary.
+        Set up class, including calculation of the crystal or molecular 
+        transform for the classic and asu-confined variants of the LLM,
+        respectively. The transform is evaluated to a higher resolution 
+        to reduce convolution artifacts at the map's boundary.
         
         Parameters
         ----------
@@ -417,6 +420,8 @@ class LiquidLikeMotions:
             number of q-vectors to evaluate per batch
         n_processes : int
             number of processes for structure factor calculation
+        asu_confined : bool
+            False for crystal transform, True for molecular trasnsform
         """
         # generate atomic model
         model = AtomicModel(pdb_path, expand_p1=expand_p1)
@@ -433,15 +438,26 @@ class LiquidLikeMotions:
                                                  return_hkl=True)
         self.res_mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
         
-        # compute crystal transform
-        self.q_grid, self.transform = compute_crystal_transform(pdb_path,
-                                                                hsampling_padded,
-                                                                ksampling_padded,
-                                                                lsampling_padded,
-                                                                expand_p1=expand_p1,
-                                                                res_limit=res_limit,
-                                                                batch_size=batch_size,
-                                                                n_processes=n_processes)
+        # compute crystal or molecular transform
+        if not asu_confined:
+            self.q_grid, self.transform = compute_crystal_transform(pdb_path,
+                                                                    hsampling_padded,
+                                                                    ksampling_padded,
+                                                                    lsampling_padded,
+                                                                    expand_p1=expand_p1,
+                                                                    res_limit=res_limit,
+                                                                    batch_size=batch_size,
+                                                                    n_processes=n_processes)
+        else:
+            self.q_grid, self.transform = compute_molecular_transform(pdb_path,
+                                                                      hsampling_padded,
+                                                                      ksampling_padded,
+                                                                      lsampling_padded,
+                                                                      expand_p1=expand_p1,
+                                                                      expand_friedel=False,
+                                                                      res_limit=res_limit,
+                                                                      batch_size=batch_size, 
+                                                                      n_processes=n_processes)
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         
         # generate mask for padded region
