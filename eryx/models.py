@@ -695,7 +695,7 @@ class RigidBodyRotations:
         rot_mat = scipy.spatial.transform.Rotation.from_rotvec(rot_vec).as_matrix()
         return rot_mat
     
-    def apply_disorder(self, sigmas, num_rot=100, sf_out=None):
+    def apply_disorder(self, sigmas, num_rot=100, ensemble_dir=None):
         """
         Compute the diffuse maps(s) resulting from rotational disorder for 
         the given sigmas by applying Guinier's equation to an ensemble of 
@@ -707,9 +707,10 @@ class RigidBodyRotations:
         sigmas : float or array of shape (n_sigma,) 
             standard deviation(s) of angular sampling in degrees
         num_rot : int
-            number of rotations to generate per sigma
-        sf_out : str
-            save select (unmasked) structure factor amplitudes to given path
+            number of rotations to generate per sigma, or
+            if ensemble_dir is not None, the nth ensemble member to generate
+        ensemble_dir : str
+            save unmasked structure factor amplitudes to given path
 
         Returns
         -------
@@ -718,6 +719,10 @@ class RigidBodyRotations:
         """
         if type(sigmas) == float or type(sigmas) == int:
             sigmas = np.array([sigmas])
+
+        if ensemble_dir is not None:
+            out_prefix = f"rot_{num_rot:05}"
+            num_rot=1
             
         Id = np.zeros((len(sigmas), self.q_grid.shape[0]))
         for n_sigma,sigma in enumerate(sigmas):
@@ -740,9 +745,8 @@ class RigidBodyRotations:
                                           U=None, 
                                           batch_size=self.batch_size,
                                           n_processes=self.n_processes)
-                    if sf_out is not None:
-                        np.save(sf_out, A)
-                        return
+                    if ensemble_dir is not None:
+                        np.save(os.path.join(ensemble_dir, out_prefix + f"_asu{asu}.npy") A)
                     fc[self.mask] += A
                     fc_square[self.mask] += np.square(np.abs(A)) 
                 Id[n_sigma] += fc_square / num_rot - np.square(np.abs(fc / num_rot))
