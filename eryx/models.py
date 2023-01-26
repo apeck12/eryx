@@ -621,7 +621,8 @@ class NonInteractingDeformableMolecules:
         self.n_processes = n_processes
         self._setup(pdb_path, expand_p1, res_limit)
         self._setup_gnm(pdb_path, gnm_cutoff)
-
+        self._setup_covmat()
+        
     def _setup(self, pdb_path, expand_p1, res_limit, q2_rounding=3):
         """
         Compute q-vectors to evaluate.
@@ -668,6 +669,13 @@ class NonInteractingDeformableMolecules:
                                         gamma_intra=1.,
                                         gamma_inter=0.)
 
+    def _setup_covmat(self):
+        """
+        Compute the covariance matrix and perform low rank truncation.
+        """
+        self.compute_covariance_matrix()
+        self.u, self.s = self._low_rank_truncation(self.covar)
+        
     def compute_covariance_matrix(self):
         """
         Compute covariance matrix for one asymmetric unit.
@@ -717,7 +725,7 @@ class NonInteractingDeformableMolecules:
                     break
         return u[:, :rank], s[:rank]
 
-    def compute_scl_intensity(self):
+    def compute_scl_intensity(self, rank=-1, outdir=None):
         """
         Compute diffuse intensity of non-interacting deformable
         molecules, in the soft-coupling limit.
@@ -728,22 +736,47 @@ class NonInteractingDeformableMolecules:
         its components, weighted by q**2, where we introduce
         the component factors G = F * B:
         I(q) = q**2 \sum_r D_r \sum_asu |G_asu,r|**2
+
+        Parameters
+        ----------
+        rank : int
+            if -1, sum across ranks; else, save rank's results
+        outdir : str
+            path for storing rank results
+
+        Returns
+        -------
+        Id : numpy.ndarray, shape (q_grid.shape[0],)
+            diffuse intensity map
         """
         Id = np.zeros((self.q_grid.shape[0]))
-        self.compute_covariance_matrix()
-        u, s = self._low_rank_truncation(self.covar)
         for i_asu in range(self.model.n_asu):
-            Id[self.res_mask] += np.dot(np.square(np.abs(structure_factors(self.q_grid[self.res_mask],
-                                                                           self.model.xyz[i_asu],
-                                                                           self.model.ff_a[i_asu],
-                                                                           self.model.ff_b[i_asu],
-                                                                           self.model.ff_c[i_asu],
-                                                                           U=self.ADP,
-                                                                           batch_size=self.batch_size,
-                                                                           n_processes=self.n_processes,
-                                                                           project_on_components=u,
-                                                                           sum_over_atoms=False))), s)
-        return np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
+            if rank == -1:
+                Id[self.res_mask] += np.dot(np.square(np.abs(structure_factors(self.q_grid[self.res_mask],
+                                                                               self.model.xyz[i_asu],
+                                                                               self.model.ff_a[i_asu],
+                                                                               self.model.ff_b[i_asu],
+                                                                               self.model.ff_c[i_asu],
+                                                                               U=self.ADP,
+                                                                               batch_size=self.batch_size,
+                                                                               n_processes=self.n_processes,
+                                                                               project_on_components=self.u,
+                                                                               sum_over_atoms=False))), self.s)
+            else:
+                Id[self.res_mask] += np.square(np.abs(structure_factors(self.q_grid[self.res_mask],
+                                                                        self.model.xyz[i_asu],
+                                                                        self.model.ff_a[i_asu],
+                                                                        self.model.ff_b[i_asu],
+                                                                        self.model.ff_c[i_asu],
+                                                                        U=self.ADP,
+                                                                        batch_size=self.batch_size,
+                                                                        n_processes=self.n_processes,
+                                                                        project_on_components=self.u[:,rank],
+                                                                        sum_over_atoms=False))) * self.s[rank]
+        Id = np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
+        if outdir is not None:
+            np.save(os.path.join(outdir, f"rank_{rank:05}.npy"), Id)
+        return Id
 
     def compute_intensity_naive(self):
         """
