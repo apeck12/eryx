@@ -530,16 +530,18 @@ class Ensemble:
     asymmetric unit populate distinct biological states.
     """
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
+                 res_limit=0, batch_size=10000, n_processes=8, frame=-1):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1)
+        self._setup(pdb_path, expand_p1, res_limit, frame)
         self.batch_size = batch_size
+        self.n_processes = n_processes
         
-    def _setup(self, pdb_path, expand_p1):
+    def _setup(self, pdb_path, expand_p1, res_limit, frame):
         """
-        Compute q-vectors to evaluate.
+        Load model and compute q-vectors to evaluate / mask.
         
         Parameters
         ----------
@@ -547,24 +549,35 @@ class Ensemble:
             path to coordinates file of asymmetric unit
         expand_p1 : bool
             if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
+        res_limit : float
+            high-resolution limit in Angstrom
+        frame : int
+            load specified conformation or all states if -1
         """
-        self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
-        self.q_grid, self.map_shape = generate_grid(self.model.A_inv, 
-                                                    self.hsampling, 
-                                                    self.ksampling, 
-                                                    self.lsampling)
+        self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=frame)
+        hkl_grid, self.map_shape = generate_grid(self.model.A_inv, 
+                                                 self.hsampling, 
+                                                 self.ksampling, 
+                                                 self.lsampling,
+                                                 return_hkl=True)
+        self.q_grid = 2*np.pi*np.inner(self.model.A_inv.T, hkl_grid).T
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
+        self.mask, res_map = get_resolution_mask(self.model.cell, hkl_grid, res_limit)
+        self.frame = frame
         
-    def apply_disorder(self, weights=None):
+    def apply_disorder(self, weights=None, ensemble_dir=None):
         """
         Compute the diffuse maps(s) resulting from ensemble disorder using
         Guinier's equation, and then taking the incoherent sum of all the
-        asymmetric units. 
+        asymmetric units. If an ensemble_dir is provided, the unweighted 
+        results for the indicated state will be saved to disk.
         
         Parameters
         ----------
         weights : shape (n_sets, n_conf) 
             set(s) of probabilities associated with each conformation
+        ensemble_dir : str
+            save path for structure factor amplitudes for given state
 
         Returns
         -------
@@ -577,10 +590,10 @@ class Ensemble:
             weights = np.array([weights])
         if weights.shape[1] != self.model.n_conf:
             raise ValueError("Second dimension of weights must match number of conformations.")
-            
-        n_maps = weights.shape[0]
+         
+        n_maps = weights.shape[0]    
         Id = np.zeros((weights.shape[0], self.q_grid.shape[0]))
-
+        
         for asu in range(self.model.n_asu):
 
             fc = np.zeros((weights.shape[0], self.q_grid.shape[0]), dtype=complex)
@@ -588,20 +601,26 @@ class Ensemble:
 
             for conf in range(self.model.n_conf):
                 index = conf * self.model.n_asu + asu
-                A = structure_factors(self.q_grid, 
+                A = structure_factors(self.q_grid[self.mask], 
                                       self.model.xyz[index], 
                                       self.model.ff_a[index], 
                                       self.model.ff_b[index], 
                                       self.model.ff_c[index], 
                                       U=None, 
-                                      batch_size=10000)
+                                      batch_size=self.batch_size,
+                                      n_processes=self.n_processes)
+
+                if ensemble_dir is not None:
+                    np.save(os.path.join(ensemble_dir, f"conf{self.frame:05}_asu{asu}.npy"), A)
+
                 for nm in range(n_maps):
-                    fc[nm] += A * weights[nm][conf]
-                    fc_square[nm] += np.square(np.abs(A)) * weights[nm][conf]
+                    fc[nm][self.mask] += A * weights[nm][conf]
+                    fc_square[nm][self.mask] += np.square(np.abs(A)) * weights[nm][conf]
 
             for nm in range(n_maps):
                 Id[nm] += fc_square[nm] - np.square(np.abs(fc[nm]))
                 
+        Id[:,~self.mask] = np.nan
         return Id
 
 class NonInteractingDeformableMolecules:
