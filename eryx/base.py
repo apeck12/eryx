@@ -1,11 +1,29 @@
 import numpy as np
 import glob
+import re
 import os
 from .pdb import AtomicModel
 from .map_utils import *
 from .scatter import structure_factors
 
-def guinier_reconstruct(ensemble_dir, n_grid_points, res_mask, n_asu):
+def natural_sort(l): 
+    """
+    Natural sort items in list. Helper function for guinier_reconstruct.
+    
+    Parameters
+    ----------
+    l : list of str
+        list of strings to natural sort
+    
+    Returns
+    -------
+    naturally-sorted list of str
+    """
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)
+
+def guinier_reconstruct(ensemble_dir, n_grid_points, res_mask, n_asu, weights=None):
     """
     Reconstruct a map from an ensemble of complex structure factors
     using Guinier's equation. The ensemble directory should contain
@@ -22,17 +40,27 @@ def guinier_reconstruct(ensemble_dir, n_grid_points, res_mask, n_asu):
         boolean resolution mask
     n_asu : int
         number of asymmetric units
+    weights : numpy.ndarray, shape (n_conformations,)
+        weights associated with each state; uniform if not provided
     """
     fnames = glob.glob(os.path.join(ensemble_dir, "*npy"))
-    n_ensemble = len(fnames) / n_asu
+    fnames = natural_sort(fnames)
     
-    fc = np.zeros(n_grid_points, dtype=complex)
-    fc_square = np.zeros(n_grid_points)
-    for fname in fnames:
-        A = np.load(fname)
-        fc[res_mask] += A
-        fc_square[res_mask] += np.square(np.abs(A))
-    Id = fc_square / n_ensemble - np.square(np.abs(fc / n_ensemble))
+    if weights is None:
+        weights = np.ones(int(len(fnames) / n_asu)) / (len(fnames) / n_asu)
+    
+    Id = np.zeros(n_grid_points)
+    for asu in range(n_asu):
+        fnames_asu = fnames[asu::n_asu]
+        fc = np.zeros(n_grid_points, dtype=complex)
+        fc_square = np.zeros(n_grid_points)
+        
+        for i,fname in enumerate(fnames_asu):
+            print(fname)
+            A = np.load(fname)
+            fc[res_mask] += A * weights[i]
+            fc_square[res_mask] += np.square(np.abs(A)) * weights[i]
+        Id += fc_square - np.square(np.abs(fc))
     
     Id[~res_mask] = np.nan
     return Id
