@@ -28,7 +28,8 @@ def compute_form_factors(q_grid, ff_a, ff_b, ff_c):
     return fj.T
 
 def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
-                            project_on_components=None, sum_over_atoms=True):
+                            compute_qF=False, project_on_components=None,
+                            sum_over_atoms=True):
     """
     Compute the structure factors for an atomic model at 
     the given q-vectors. 
@@ -47,6 +48,9 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
         c coefficient of atomic form factors
     U : numpy.ndarray, shape (n_atoms,) 
         isotropic displacement parameters
+    compute_qF : boolean
+        False (default).
+        If true, return structure factors at q-vectors times q-vectors
     project_on_components : None (default) or numpy.ndarray, shape (n_atoms, n_components)
         Projection matrix to convert structure factors into component factors
     sum_over_atoms: boolean
@@ -55,7 +59,8 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
     Returns
     -------
     A : numpy.ndarray, shape (n_points) or (n_points, n_atoms) or (n_points, n_components)
-        structure factors at q-vectors
+        structure factors at q-vectors.
+        If compute_qF, return [q_x A(q), q_y A(q), q_z A(q)] instead of A(q)
     """
     if U is None:
         U = np.zeros(xyz.shape[0])
@@ -66,6 +71,9 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
     
     A = 1j * fj * np.sin(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
     A += fj * np.cos(np.dot(q_grid, xyz.T)) * np.exp(-0.5 * qUq)
+    if compute_qF:
+        A = A[:,:,None] * q_grid[:,None,:]
+        A = A.reshape((A.shape[0],A.shape[1]*A.shape[2]))
     if project_on_components is not None:
         A = np.matmul(A, project_on_components)
     if sum_over_atoms:
@@ -74,7 +82,8 @@ def structure_factors_batch(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
 
 def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
                       batch_size=100000, n_processes=8,
-                      project_on_components=None, sum_over_atoms=True):
+                      compute_qF=False, project_on_components=None,
+                      sum_over_atoms=True):
     """
     Batched version of the structure factor calculation. See 
     docstring for structure_factors_batch for parameters and 
@@ -100,12 +109,13 @@ def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
         A = np.zeros(A_shape, dtype=np.complex128)
         for batch in range(n_batches):
             q_sel = q_grid[splits[batch]: splits[batch+1]]
-            A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U,
+            A[splits[batch]: splits[batch+1]] = structure_factors_batch(q_sel, xyz, ff_a, ff_b, ff_c, U=U, compute_qF=compute_qF,
                                                                         project_on_components=project_on_components, sum_over_atoms=sum_over_atoms)
     else:
         q_sel = [q_grid[splits[batch]: splits[batch+1]] for batch in range(n_batches)]
         pool = mp.Pool(processes=n_processes)
         sf_partial = partial(structure_factors_batch, xyz=xyz, ff_a=ff_a, ff_b=ff_b, ff_c=ff_c, U=U,
+                             compute_qF=compute_qF,
                              project_on_components=project_on_components, sum_over_atoms=sum_over_atoms)
         A = np.concatenate(pool.map(sf_partial, q_sel), axis=0)
        

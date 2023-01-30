@@ -607,7 +607,7 @@ class GaussianNetworkModel:
         """
         if kvec is None:
             kvec = np.zeros(3)
-        Kmat = hessian[:, :, self.id_cell_ref, :, :]
+        Kmat = np.copy(hessian[:, :, self.id_cell_ref, :, :])
 
         for j_cell in range(self.n_cell):
             if j_cell == self.id_cell_ref:
@@ -641,8 +641,9 @@ class GaussianNetworkModel:
         if kvec is None:
             kvec = np.zeros(3)
         Kmat = self.compute_K(hessian, kvec=kvec)
-        Kinv = np.linalg.pinv(Kmat.reshape(self.n_asu * self.n_atoms_per_asu,
-                                           self.n_asu * self.n_atoms_per_asu))
-        Kinv = Kinv.reshape((self.n_asu, self.n_atoms_per_asu,
-                             self.n_asu, self.n_atoms_per_asu))
+        Kshape = Kmat.shape
+        Kinv = np.linalg.pinv(Kmat.reshape(Kshape[0] * Kshape[1],
+                                           Kshape[2] * Kshape[3]))
+        Kinv = Kinv.reshape((Kshape[0], Kshape[1],
+                             Kshape[2], Kshape[3]))
         return Kinv
