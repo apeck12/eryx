@@ -1270,6 +1270,7 @@ class OnePhonon:
                 for dl in range(self.lsampling[2]):
 
                     q_indices = self._at_kvec_from_miller_points((dh, dk, dl))
+                    q_indices = q_indices[self.res_mask[q_indices]]
 
                     F = np.zeros((q_indices.shape[0],
                                   self.n_asu,
