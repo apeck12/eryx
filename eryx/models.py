@@ -9,275 +9,7 @@ from .pdb import AtomicModel, Crystal, GaussianNetworkModel
 from .map_utils import *
 from .scatter import structure_factors
 from .stats import compute_cc
-
-def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True, 
-                              res_limit=0, batch_size=5000, n_processes=8):
-    """
-    Compute the crystal transform as the coherent sum of the
-    asymmetric units. If expand_p1 is False, it is assumed 
-    that the pdb contains asymmetric units as separate frames.
-    The crystal transform is only defined at integral Miller 
-    indices, so grid points at fractional Miller indices or 
-    beyond the resolution limit will be set to zero.
-    
-    Parameters
-    ----------
-    pdb_path : str
-        path to coordinates file 
-    hsampling : tuple, shape (3,)
-        (hmin, hmax, oversampling) relative to Miller indices
-    ksampling : tuple, shape (3,)
-        (kmin, kmax, oversampling) relative to Miller indices
-    lsampling : tuple, shape (3,)
-        (lmin, lmax, oversampling) relative to Miller indices
-    expand_p1 : bool
-        if True, expand PDB (asymmetric unit) to unit cell
-    U : numpy.ndarray, shape (n_atoms,)
-        isotropic displacement parameters, applied to each asymmetric unit
-    res_limit : float
-        high resolution limit
-    batch_size : int
-        number of q-vectors to evaluate per batch 
-    n_processes : int
-        number of processors over which to parallelize the calculation
-        
-    Returns
-    -------
-    q_grid : numpy.ndarray, (n_points, 3)
-        q-vectors corresponding to flattened intensity map
-    I : numpy.ndarray, 3d
-        intensity map of the crystal transform
-    """
-    model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
-    model.flatten_model()
-    hkl_grid, map_shape = generate_grid(model.A_inv, 
-                                        hsampling,
-                                        ksampling, 
-                                        lsampling, 
-                                        return_hkl=True)
-    q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
-    mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
-    dq_map = np.around(get_dq_map(model.A_inv, hkl_grid), 5)
-    dq_map[~mask] = -1
-    
-    I = np.zeros(q_grid.shape[0])
-    I[dq_map==0] = np.square(np.abs(structure_factors(q_grid[dq_map==0],
-                                                      model.xyz, 
-                                                      model.ff_a,
-                                                      model.ff_b,
-                                                      model.ff_c,
-                                                      U=U, 
-                                                      batch_size=batch_size,
-                                                      n_processes=n_processes)))
-    return q_grid, I.reshape(map_shape)
-
-def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
-                                expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
-    """
-    Compute the molecular transform as the incoherent sum of the 
-    asymmetric units. If expand_p1 is False, the pdb is assumed 
-    to contain the asymmetric units as separate frames / models.
-    The calculation is accelerated by leveraging symmetry in one
-    of two ways, one of which will maintain the input grid extents
-    (expand_friedel=False), while the other will output a map that 
-    includes the volume of reciprocal space related by Friedel's law.
-    If h/k/lsampling are symmetric about (0,0,0), these approaches 
-    will yield identical maps. If expand_friedel is False and the
-    space group is P1, the simple sum over asus will be performed
-    to avoid wasting time on determining symmetry relationships.
-
-    Parameters
-    ----------
-    pdb_path : str
-        path to coordinates file 
-    hsampling : tuple, shape (3,)
-        (hmin, hmax, oversampling) relative to Miller indices
-    ksampling : tuple, shape (3,)
-        (kmin, kmax, oversampling) relative to Miller indices
-    lsampling : tuple, shape (3,)
-        (lmin, lmax, oversampling) relative to Miller indices
-    U : numpy.ndarray, shape (n_atoms,)
-        isotropic displacement parameters, applied to each asymmetric unit
-    expand_p1 : bool
-        if True, expand PDB (asymmetric unit) to unit cell
-    expand_friedel : bool
-        if True, expand to full sphere in reciprocal space
-    res_limit : float
-        high resolution limit
-    batch_size : int
-        number of q-vectors to evaluate per batch 
-    n_processes : int
-        number of processors over which to parallelize the calculation
-        
-    Returns
-    -------
-    q_grid : numpy.ndarray, (n_points, 3)
-        q-vectors corresponding to flattened intensity map
-    I : numpy.ndarray, 3d
-        intensity map of the molecular transform
-    """
-    model = AtomicModel(pdb_path, expand_p1=expand_p1)
-    hkl_grid, map_shape = generate_grid(model.A_inv, 
-                                        hsampling,
-                                        ksampling, 
-                                        lsampling, 
-                                        return_hkl=True)
-    q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
-    mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
-    sampling = (hsampling[2], ksampling[2], lsampling[2])
-
-    if model.space_group == 'P 1' and not expand_friedel:
-        I = np.zeros(q_grid.shape[0])
-        for asu in range(model.xyz.shape[0]):
-            I[mask] += np.square(np.abs(structure_factors(q_grid[mask],
-                                                          model.xyz[asu],
-                                                          model.ff_a[asu], 
-                                                          model.ff_b[asu], 
-                                                          model.ff_c[asu],
-                                                          U=U,
-                                                          batch_size=batch_size,
-                                                          n_processes=n_processes)))
-        I = I.reshape(map_shape)
-    else:
-        if expand_friedel:
-            I = incoherent_sum_real(model, hkl_grid, sampling, U, mask, batch_size, n_processes)
-        else:
-            I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size, n_processes)
-            I = I.reshape(map_shape)
-            I[~mask.reshape(map_shape)] = 0
-
-    return q_grid, I
-
-def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size=10000, n_processes=8):
-    """
-    Compute the incoherent sum of the scattering from all asus.
-    The scattering for the unique reciprocal wedge is computed 
-    by summing over all asymmetric units in real space, and then
-    using symmetry to extend the calculation to the remainder of
-    the map (including the portion of reciprocal space related by
-    Friedel's law even if not spanned by the input hkl_grid).
-    
-    Parameters
-    ----------
-    model : AtomicModel
-        instance of AtomicModel class expanded to p1
-    hkl_grid : numpy.ndarray, shape (n_points, 3)
-        hkl vectors of map grid points
-    sampling : tuple
-        sampling frequency along h,k,l axes
-    U : numpy.ndarray, shape (n_atoms,)
-        isotropic displacement parameters, applied to each asymmetric unit
-    batch_size : int
-        number of q-vectors to evaluate per batch
-    mask : numpy.ndarray, shape (n_points,)
-        boolean mask, where True indicates grid points to keep
-    n_processes : int
-        number of processors over which to parallelize the calculation
-        
-    Returns
-    -------
-    I : numpy.ndarray, 3d
-        intensity map of the molecular transform
-    """
-    # generate asu mask and combine with resolution mask
-    if mask is None:
-        mask = np.ones(hkl_grid.shape[0]).astype(bool)
-    mask *= get_asu_mask(model.space_group, hkl_grid)
-    
-    # sum over asus to compute scattering for unique reciprocal wedge
-    q_grid = 2*np.pi*np.inner(model.A_inv.T, hkl_grid).T
-    I_asu = np.zeros(q_grid.shape[0])
-    for asu in range(model.xyz.shape[0]):
-        I_asu[mask] += np.square(np.abs(structure_factors(q_grid[mask],
-                                                          model.xyz[asu],
-                                                          model.ff_a[asu], 
-                                                          model.ff_b[asu], 
-                                                          model.ff_c[asu], 
-                                                          U=U, 
-                                                          batch_size=batch_size,
-                                                          n_processes=n_processes)))
-        
-    # get symmetry information for expanded map
-    sym_ops = expand_sym_ops(model.sym_ops)
-    hkl_sym = get_symmetry_equivalents(hkl_grid, sym_ops)
-    ravel, map_shape_ravel = get_ravel_indices(hkl_sym, sampling)
-    sampling_ravel = get_centered_sampling(map_shape_ravel, sampling)
-    hkl_grid_mult, mult = compute_multiplicity(model, 
-                                               sampling_ravel[0], 
-                                               sampling_ravel[1], 
-                                               sampling_ravel[2])
-
-    # symmetrize and account for multiplicity
-    I = np.zeros(map_shape_ravel).flatten()
-    I[ravel[0]] = I_asu.copy()
-    for asu in range(1, ravel.shape[0]):
-        I[ravel[asu]] += I_asu.copy()
-    I = I.reshape(map_shape_ravel)
-    I /= (mult.max() / mult) 
-    
-    sampling_original = [(int(hkl_grid[:,i].min()),int(hkl_grid[:,i].max()),sampling[i]) for i in range(3)]
-    I = resize_map(I, sampling_original, sampling_ravel)
-    
-    return I
-    
-def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=10000, n_processes=8):
-    """
-    Compute the incoherent sum of the scattering from all asus.
-    For each grid point, the symmetry-equivalents are determined
-    and mapped from 3d to 1d space by raveling. The intensities 
-    for the first asu are computed and mapped to subsequent asus.
-    Finally, intensities across symmetry-equivalent reflections 
-    are summed (hence in reciprocal rather than real space). The 
-    extents defined by hkl_grid are maintained.
-    
-    Parameters
-    ----------
-    model : AtomicModel
-        instance of AtomicModel class expanded to p1
-    hkl_grid : numpy.ndarray, shape (n_points, 3)
-        hkl vectors of map grid points
-    sampling : tuple
-        sampling frequency along h,k,l axes
-    U : numpy.ndarray, shape (n_atoms,)
-        isotropic displacement parameters, applied to each asymmetric unit
-    batch_size : int
-        number of q-vectors to evaluate per batch
-    n_processes : int
-        number of processors over which to parallelize the calculation
-        
-    Returns
-    -------
-    I : numpy.ndarray, (n_points,)
-        intensity map of the molecular transform
-    """
-    hkl_grid_sym = get_symmetry_equivalents(hkl_grid, model.sym_ops)
-    ravel, map_shape_ravel = get_ravel_indices(hkl_grid_sym, sampling)
-    
-    I_sym = np.zeros(ravel.shape)
-    for asu in range(I_sym.shape[0]):
-        q_asu = 2*np.pi*np.inner(model.A_inv.T, hkl_grid_sym[asu]).T
-        if asu == 0:
-            I_sym[asu] = np.square(np.abs(structure_factors(q_asu,
-                                                            model.xyz[0],
-                                                            model.ff_a[0],
-                                                            model.ff_b[0],
-                                                            model.ff_c[0],
-                                                            U=U,
-                                                            batch_size=batch_size,
-                                                            n_processes=n_processes)))
-        else:
-            intersect1d, comm1, comm2 = np.intersect1d(ravel[0], ravel[asu], return_indices=True)
-            I_sym[asu][comm2] = I_sym[0][comm1]
-            comm3 = np.arange(len(ravel[asu]))[~np.in1d(ravel[asu],ravel[0])]
-            I_sym[asu][comm3] = np.square(np.abs(structure_factors(q_asu[comm3],
-                                                                   model.xyz[0],
-                                                                   model.ff_a[0],
-                                                                   model.ff_b[0],
-                                                                   model.ff_c[0],
-                                                                   U=U,
-                                                                   batch_size=batch_size)))
-    I = np.sum(I_sym, axis=0)
-    return I
+from .base import compute_molecular_transform, compute_crystal_transform
 
 class RigidBodyTranslations:
     
@@ -389,20 +121,23 @@ class LiquidLikeMotions:
     Model in which collective motions decay exponentially with distance
     across the crystal. Mathematically the predicted diffuse scattering 
     is the convolution between the crystal transform and a disorder kernel.
+    In the asu_confined regime, disorder is confined to the asymmetric unit
+    and the convolution is with the molecular rather than crystal transform.
     """
     
     def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
-                 border=1, res_limit=0, batch_size=5000, n_processes=8):
+                 border=1, res_limit=0, batch_size=5000, n_processes=8, asu_confined=False):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, n_processes)
+        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, n_processes, asu_confined)
                 
-    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, n_processes):
+    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, n_processes, asu_confined):
         """
-        Set up class, including calculation of the crystal transform.
-        The transform can be evaluated to a higher resolution so that
-        the edge of the disorder map doesn't encounter a boundary.
+        Set up class, including calculation of the crystal or molecular 
+        transform for the classic and asu-confined variants of the LLM,
+        respectively. The transform is evaluated to a higher resolution 
+        to reduce convolution artifacts at the map's boundary.
         
         Parameters
         ----------
@@ -418,6 +153,8 @@ class LiquidLikeMotions:
             number of q-vectors to evaluate per batch
         n_processes : int
             number of processes for structure factor calculation
+        asu_confined : bool
+            False for crystal transform, True for molecular trasnsform
         """
         # generate atomic model
         model = AtomicModel(pdb_path, expand_p1=expand_p1)
@@ -434,15 +171,26 @@ class LiquidLikeMotions:
                                                  return_hkl=True)
         self.res_mask, res_map = get_resolution_mask(model.cell, hkl_grid, res_limit)
         
-        # compute crystal transform
-        self.q_grid, self.transform = compute_crystal_transform(pdb_path,
-                                                                hsampling_padded,
-                                                                ksampling_padded,
-                                                                lsampling_padded,
-                                                                expand_p1=expand_p1,
-                                                                res_limit=res_limit,
-                                                                batch_size=batch_size,
-                                                                n_processes=n_processes)
+        # compute crystal or molecular transform
+        if not asu_confined:
+            self.q_grid, self.transform = compute_crystal_transform(pdb_path,
+                                                                    hsampling_padded,
+                                                                    ksampling_padded,
+                                                                    lsampling_padded,
+                                                                    expand_p1=expand_p1,
+                                                                    res_limit=res_limit,
+                                                                    batch_size=batch_size,
+                                                                    n_processes=n_processes)
+        else:
+            self.q_grid, self.transform = compute_molecular_transform(pdb_path,
+                                                                      hsampling_padded,
+                                                                      ksampling_padded,
+                                                                      lsampling_padded,
+                                                                      expand_p1=expand_p1,
+                                                                      expand_friedel=False,
+                                                                      res_limit=res_limit,
+                                                                      batch_size=batch_size, 
+                                                                      n_processes=n_processes)
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         
         # generate mask for padded region
@@ -680,7 +428,7 @@ class RigidBodyRotations:
         rot_mat = scipy.spatial.transform.Rotation.from_rotvec(rot_vec).as_matrix()
         return rot_mat
     
-    def apply_disorder(self, sigmas, num_rot=100, sf_out=None):
+    def apply_disorder(self, sigmas, num_rot=100, ensemble_dir=None):
         """
         Compute the diffuse maps(s) resulting from rotational disorder for 
         the given sigmas by applying Guinier's equation to an ensemble of 
@@ -692,9 +440,10 @@ class RigidBodyRotations:
         sigmas : float or array of shape (n_sigma,) 
             standard deviation(s) of angular sampling in degrees
         num_rot : int
-            number of rotations to generate per sigma
-        sf_out : str
-            save select (unmasked) structure factor amplitudes to given path
+            number of rotations to generate per sigma, or
+            if ensemble_dir is not None, the nth ensemble member to generate
+        ensemble_dir : str
+            save unmasked structure factor amplitudes to given path
 
         Returns
         -------
@@ -703,6 +452,10 @@ class RigidBodyRotations:
         """
         if type(sigmas) == float or type(sigmas) == int:
             sigmas = np.array([sigmas])
+
+        if ensemble_dir is not None:
+            out_prefix = f"rot_{num_rot:05}"
+            num_rot=1
             
         Id = np.zeros((len(sigmas), self.q_grid.shape[0]))
         for n_sigma,sigma in enumerate(sigmas):
@@ -725,9 +478,8 @@ class RigidBodyRotations:
                                           U=None, 
                                           batch_size=self.batch_size,
                                           n_processes=self.n_processes)
-                    if sf_out is not None:
-                        np.save(sf_out, A)
-                        return
+                    if ensemble_dir is not None:
+                        np.save(os.path.join(ensemble_dir, out_prefix + f"_asu{asu}.npy"), A)
                     fc[self.mask] += A
                     fc_square[self.mask] += np.square(np.abs(A)) 
                 Id[n_sigma] += fc_square / num_rot - np.square(np.abs(fc / num_rot))
@@ -779,16 +531,18 @@ class Ensemble:
     asymmetric unit populate distinct biological states.
     """
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, batch_size=10000, expand_p1=True):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
+                 res_limit=0, batch_size=10000, n_processes=8, frame=-1):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1)
+        self._setup(pdb_path, expand_p1, res_limit, frame)
         self.batch_size = batch_size
+        self.n_processes = n_processes
         
-    def _setup(self, pdb_path, expand_p1):
+    def _setup(self, pdb_path, expand_p1, res_limit, frame):
         """
-        Compute q-vectors to evaluate.
+        Load model and compute q-vectors to evaluate / mask.
         
         Parameters
         ----------
@@ -796,24 +550,35 @@ class Ensemble:
             path to coordinates file of asymmetric unit
         expand_p1 : bool
             if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
+        res_limit : float
+            high-resolution limit in Angstrom
+        frame : int
+            load specified conformation or all states if -1
         """
-        self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
-        self.q_grid, self.map_shape = generate_grid(self.model.A_inv, 
-                                                    self.hsampling, 
-                                                    self.ksampling, 
-                                                    self.lsampling)
+        self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=frame)
+        hkl_grid, self.map_shape = generate_grid(self.model.A_inv, 
+                                                 self.hsampling, 
+                                                 self.ksampling, 
+                                                 self.lsampling,
+                                                 return_hkl=True)
+        self.q_grid = 2*np.pi*np.inner(self.model.A_inv.T, hkl_grid).T
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
+        self.mask, res_map = get_resolution_mask(self.model.cell, hkl_grid, res_limit)
+        self.frame = frame
         
-    def apply_disorder(self, weights=None):
+    def apply_disorder(self, weights=None, ensemble_dir=None):
         """
         Compute the diffuse maps(s) resulting from ensemble disorder using
         Guinier's equation, and then taking the incoherent sum of all the
-        asymmetric units. 
+        asymmetric units. If an ensemble_dir is provided, the unweighted 
+        results for the indicated state will be saved to disk.
         
         Parameters
         ----------
         weights : shape (n_sets, n_conf) 
             set(s) of probabilities associated with each conformation
+        ensemble_dir : str
+            save path for structure factor amplitudes for given state
 
         Returns
         -------
@@ -826,10 +591,10 @@ class Ensemble:
             weights = np.array([weights])
         if weights.shape[1] != self.model.n_conf:
             raise ValueError("Second dimension of weights must match number of conformations.")
-            
-        n_maps = weights.shape[0]
+         
+        n_maps = weights.shape[0]    
         Id = np.zeros((weights.shape[0], self.q_grid.shape[0]))
-
+        
         for asu in range(self.model.n_asu):
 
             fc = np.zeros((weights.shape[0], self.q_grid.shape[0]), dtype=complex)
@@ -837,20 +602,26 @@ class Ensemble:
 
             for conf in range(self.model.n_conf):
                 index = conf * self.model.n_asu + asu
-                A = structure_factors(self.q_grid, 
+                A = structure_factors(self.q_grid[self.mask], 
                                       self.model.xyz[index], 
                                       self.model.ff_a[index], 
                                       self.model.ff_b[index], 
                                       self.model.ff_c[index], 
                                       U=None, 
-                                      batch_size=10000)
+                                      batch_size=self.batch_size,
+                                      n_processes=self.n_processes)
+
+                if ensemble_dir is not None:
+                    np.save(os.path.join(ensemble_dir, f"conf{self.frame:05}_asu{asu}.npy"), A)
+
                 for nm in range(n_maps):
-                    fc[nm] += A * weights[nm][conf]
-                    fc_square[nm] += np.square(np.abs(A)) * weights[nm][conf]
+                    fc[nm][self.mask] += A * weights[nm][conf]
+                    fc_square[nm][self.mask] += np.square(np.abs(A)) * weights[nm][conf]
 
             for nm in range(n_maps):
                 Id[nm] += fc_square[nm] - np.square(np.abs(fc[nm]))
                 
+        Id[:,~self.mask] = np.nan
         return Id
 
 class NonInteractingDeformableMolecules:
@@ -870,7 +641,8 @@ class NonInteractingDeformableMolecules:
         self.n_processes = n_processes
         self._setup(pdb_path, expand_p1, res_limit)
         self._setup_gnm(pdb_path, gnm_cutoff)
-
+        self._setup_covmat()
+        
     def _setup(self, pdb_path, expand_p1, res_limit, q2_rounding=3):
         """
         Compute q-vectors to evaluate.
@@ -917,6 +689,13 @@ class NonInteractingDeformableMolecules:
                                         gamma_intra=1.,
                                         gamma_inter=0.)
 
+    def _setup_covmat(self):
+        """
+        Compute the covariance matrix and perform low rank truncation.
+        """
+        self.compute_covariance_matrix()
+        self.u, self.s = self._low_rank_truncation(self.covar)
+        
     def compute_covariance_matrix(self):
         """
         Compute covariance matrix for one asymmetric unit.
@@ -966,7 +745,7 @@ class NonInteractingDeformableMolecules:
                     break
         return u[:, :rank], s[:rank]
 
-    def compute_scl_intensity(self):
+    def compute_scl_intensity(self, rank=-1, outdir=None):
         """
         Compute diffuse intensity of non-interacting deformable
         molecules, in the soft-coupling limit.
@@ -977,22 +756,47 @@ class NonInteractingDeformableMolecules:
         its components, weighted by q**2, where we introduce
         the component factors G = F * B:
         I(q) = q**2 \sum_r D_r \sum_asu |G_asu,r|**2
+
+        Parameters
+        ----------
+        rank : int
+            if -1, sum across ranks; else, save rank's results
+        outdir : str
+            path for storing rank results
+
+        Returns
+        -------
+        Id : numpy.ndarray, shape (q_grid.shape[0],)
+            diffuse intensity map
         """
         Id = np.zeros((self.q_grid.shape[0]))
-        self.compute_covariance_matrix()
-        u, s = self._low_rank_truncation(self.covar)
         for i_asu in range(self.model.n_asu):
-            Id += np.dot(np.square(np.abs(structure_factors(self.q_grid,
-                                                           self.model.xyz[i_asu],
-                                                           self.model.ff_a[i_asu],
-                                                           self.model.ff_b[i_asu],
-                                                           self.model.ff_c[i_asu],
-                                                           U=self.ADP,
-                                                           batch_size=self.batch_size,
-                                                           n_processes=self.n_processes,
-                                                           project_on_components=u,
-                                                           sum_over_atoms=False))), s)
-        return np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
+            if rank == -1:
+                Id[self.res_mask] += np.dot(np.square(np.abs(structure_factors(self.q_grid[self.res_mask],
+                                                                               self.model.xyz[i_asu],
+                                                                               self.model.ff_a[i_asu],
+                                                                               self.model.ff_b[i_asu],
+                                                                               self.model.ff_c[i_asu],
+                                                                               U=self.ADP,
+                                                                               batch_size=self.batch_size,
+                                                                               n_processes=self.n_processes,
+                                                                               project_on_components=self.u,
+                                                                               sum_over_atoms=False))), self.s)
+            else:
+                Id[self.res_mask] += np.square(np.abs(structure_factors(self.q_grid[self.res_mask],
+                                                                        self.model.xyz[i_asu],
+                                                                        self.model.ff_a[i_asu],
+                                                                        self.model.ff_b[i_asu],
+                                                                        self.model.ff_c[i_asu],
+                                                                        U=self.ADP,
+                                                                        batch_size=self.batch_size,
+                                                                        n_processes=self.n_processes,
+                                                                        project_on_components=self.u[:,rank],
+                                                                        sum_over_atoms=False))) * self.s[rank]
+        Id = np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
+        if outdir is not None:
+            np.save(os.path.join(outdir, f"rank_{rank:05}.npy"), Id)
+        return Id
 
     def compute_intensity_naive(self):
         """
