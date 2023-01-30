@@ -1491,4 +1491,4 @@ class OnePhonon:
                         np.square(np.abs(np.dot(F, self.V[dh, dk, dl]))),
                         self.Winv[dh, dk, dl])
 
-        return Id
+        return np.real(Id)
