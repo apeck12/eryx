@@ -1,10 +1,11 @@
 import numpy as np
 import scipy.signal
 import scipy.spatial
+from scipy.linalg import block_diag
 import glob
 import os
 from tqdm import tqdm
-from .pdb import AtomicModel, GaussianNetworkModel
+from .pdb import AtomicModel, Crystal, GaussianNetworkModel
 from .map_utils import *
 from .scatter import structure_factors
 from .stats import compute_cc
