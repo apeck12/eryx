@@ -38,17 +38,25 @@ def visualize_central_slices(I, vmax_scale=5):
 
 class VisualizeCrystal:
 
-    def __init__(self, crystal):
+    def __init__(self, crystal, gnm=None, nidm=None):
         """
         Plotly helper functions to visualize the Crystal object.
         Parameters
         ----------
-        crystal : eryx.models.Crystal object
+        crystal : eryx.pdb.Crystal object
+        gnm : (optional) eryx.pdb.GaussianNetworkModel object
+        nidm : (optional) eryx.models.NonInteractingDeformableMolecules object
         """
         self.crystal = crystal
         self.draw_data = None
         self.color_by = 'asu_id'
         self.color_palette = 'xkcd'
+        self.gnm = gnm   # if not None, show inter ASU contacts
+        if self.gnm is not None:
+            self.gnm_contacts_indices = self._setup_gnm_contacts()
+        self.nidm = nidm # if not None, show intra ASU covariances
+        if self.nidm is not None:
+            self.nidm_covar_indices = self._setup_nidm_covar()
 
     def show(self):
         """
@@ -69,6 +77,12 @@ class VisualizeCrystal:
                     for i_asu in np.arange(self.crystal.model.n_asu):
                         self.draw_asu(i_asu, unit_cell=[h,k,l],
                                       name=f'Cell #{self.crystal.hkl_to_id(unit_cell=[h,k,l])} | ASU #{i_asu}')
+                        if self.gnm is not None:
+                            self._draw_network(self.gnm_contacts_indices,
+                                               i_asu, unit_cell=[h,k,l])
+                        if self.nidm is not None:
+                            self._draw_network(self.nidm_covar_indices,
+                                               i_asu, unit_cell=[h,k,l])
 
     def draw_unit_cell_axes(self, origin=np.array([0., 0., 0.]), showlegend=False):
         """
@@ -114,6 +128,60 @@ class VisualizeCrystal:
                                                                color=self._get_color(asu_id, unit_cell)),
                                                    name=name,
                                                    showlegend=showlegend))
+
+    def _setup_gnm_contacts(self):
+        indices = []
+        for i_asu in range(self.crystal.model.n_asu):
+            indices.append([])
+            for j_cell in range(self.crystal.n_cell):
+                indices[i_asu].append([])
+                for j_asu in range(self.crystal.model.n_asu):
+                    indices[i_asu][j_cell].append([])
+                    if i_asu == j_asu and j_cell == self.crystal.hkl_to_id([0, 0, 0]):
+                        indices[i_asu][j_cell][j_asu].append([])
+                    else:
+                        indices[i_asu][j_cell][j_asu] = self.gnm.asu_neighbors[i_asu][j_cell][j_asu]
+        return indices
+
+    def _setup_nidm_covar(self):
+        threshold = np.mean(self.nidm.covar.flatten()) \
+                    + 5*np.std(self.nidm.covar.flatten())
+        asu_indices = []
+        pairs = np.where(self.nidm.covar > threshold)
+        for i in range(self.crystal.get_asu_xyz().shape[0]):
+            i_indices = np.where(pairs[0]==i)
+            j = pairs[1][i_indices]
+            j_indices = np.where(pairs[1][i_indices]>i)[0]
+            asu_indices.append(j[j_indices].tolist())
+
+        indices = []
+        for i_asu in range(self.crystal.model.n_asu):
+            indices.append([])
+            for j_cell in range(self.crystal.n_cell):
+                indices[i_asu].append([])
+                for j_asu in range(self.crystal.model.n_asu):
+                    indices[i_asu][j_cell].append([])
+                    if i_asu == j_asu and j_cell == self.crystal.hkl_to_id([0,0,0]):
+                        indices[i_asu][j_cell][j_asu] = asu_indices
+        return indices
+
+    def _draw_network(self, indices, asu_id=0, unit_cell=None, showlegend=False):
+        if unit_cell is None:
+            unit_cell = [0, 0, 0]
+        xyz = np.zeros((2, 3))
+        for i_asu in range(self.crystal.model.n_asu):
+            pairs = indices[i_asu][self.crystal.hkl_to_id(unit_cell)][asu_id]
+            for i_at in range(len(pairs)):
+                if len(pairs[i_at]) == 0:
+                    continue
+                for j_at in pairs[i_at]:
+                    #print(i_at, j_at, i_asu, self.crystal.hkl_to_id(unit_cell), asu_id)
+                    xyz[0] = self.crystal.get_asu_xyz(i_asu,[0,0,0])[i_at]
+                    xyz[1] = self.crystal.get_asu_xyz(asu_id,unit_cell)[j_at]
+                    self._draw_go_vector(
+                        self._build_go_vector(xyz=xyz,
+                                              line=dict(color=self._get_color(asu_id,unit_cell)),
+                                              showlegend=showlegend))
 
     def _draw_go_vector(self, go_vector):
         if self.draw_data is None:
