@@ -263,7 +263,7 @@ class PhononPlots:
     def dispersion_curve(self):
         nrows = 2
         ncols = 4
-        fig = plt.figure(figsize=(2 * ncols, 2 * nrows), dpi=180,
+        fig = plt.figure(figsize=(2 * ncols, 4 * nrows), dpi=180,
                          constrained_layout=True)
         gs = GridSpec(nrows, ncols, figure=fig)
 
@@ -287,7 +287,7 @@ class PhononPlots:
                 for i in range(wvec.shape[-1]):
                     ax.plot(knorm, wvec[:, i], 'o', label=f'#{i}')
                     if gs_i == 1:
-                        ax.set_xlabel('phonon wavector')
+                        ax.set_xlabel('phonon wavevector ($\mathrm{\AA}^{-1}$)')
                     if gs_j == 0:
                         ax.set_ylabel('phonon frequency')
                 if i_curve == 3:
@@ -303,7 +303,7 @@ class PhononPlots:
     def contribution_curve(self):
         nrows=2
         ncols=3
-        fig = plt.figure(figsize=(2 * ncols, 2 * nrows), dpi=180,
+        fig = plt.figure(figsize=(2 * ncols, 3 * nrows), dpi=180,
                          constrained_layout=True)
         gs = GridSpec(nrows, ncols, figure=fig)
         knorm = self.phonon.kvec_norm.reshape(-1,1)
@@ -325,10 +325,10 @@ class PhononPlots:
                         '.', label=f'{A[i]}')
             ax.set_title(f'#{i_curve}')
             if gs_i == 1:
-                ax.set_xlabel('phonon wavector')
+                ax.set_xlabel('phonon wavevector ($\mathrm{\AA}^{-1}$)')
             if gs_j == 0:
                 ax.set_ylabel('phonon intensity')
             ax.set_yscale('log')
-            if i_curve == 0:
-                ax.legend()
+            if i_curve == 2:
+                ax.legend(bbox_to_anchor=(2.1,0.5))
         plt.show()
