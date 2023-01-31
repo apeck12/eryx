@@ -1235,6 +1235,8 @@ class OnePhonon:
                     v, w, _ = np.linalg.svd(Dmat)
                     w = np.sqrt(w)
                     w = np.where(w < 1e-6, np.nan, w)
+                    w = w[::-1]
+                    v = v[:,::-1]
                     self.Winv[dh, dk, dl] = 1. / w ** 2
                     self.V[dh, dk, dl] = np.matmul(self.Linv.T, v)
 
