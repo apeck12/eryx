@@ -252,7 +252,8 @@ class PhononPlots:
     def dispersion_curve(self):
         nrows = 2
         ncols = 4
-        fig = plt.figure(figsize=(2 * ncols, 2 * nrows), constrained_layout=True)
+        fig = plt.figure(figsize=(2 * ncols, 2 * nrows), dpi=180,
+                         constrained_layout=True)
         gs = GridSpec(nrows, ncols, figure=fig)
 
         title   = ['0->h','0->k','0->l','0->h+k','0->h+l','0->k+l','0->h+k+l']
@@ -273,11 +274,13 @@ class PhononPlots:
                                                    k=k_curve[i_curve],
                                                    l=l_curve[i_curve])
                 for i in range(wvec.shape[-1]):
-                    ax.plot(knorm, wvec[:, i], 'o')
+                    ax.plot(knorm, wvec[:, i], 'o', label=f'#{i}')
                     if gs_i == 1:
                         ax.set_xlabel('phonon wavector')
                     if gs_j == 0:
                         ax.set_ylabel('phonon frequency')
+                if i_curve == 0:
+                    ax.legend()
                 ax.set_title(title[i_curve])
             else:
                 ax.hist(np.sqrt(1. / np.real(self.phonon.Winv).flatten()),
@@ -286,3 +289,35 @@ class PhononPlots:
         plt.tight_layout()
         plt.show()
 
+    def contribution_curve(self):
+        nrows=2
+        ncols=3
+        fig = plt.figure(figsize=(2 * ncols, 2 * nrows), dpi=180,
+                         constrained_layout=True)
+        gs = GridSpec(nrows, ncols, figure=fig)
+        knorm = self.phonon.kvec_norm.reshape(-1,1)
+        Winv2 = np.real(self.phonon.Winv).reshape(-1,6)
+        Vvec  = self.phonon.V.reshape(-1,6,6)
+        A = ['x', 'y', 'z', 'r1', 'r2', 'r3']
+
+        for i_curve in range(6):
+            gs_j = i_curve % ncols
+            gs_i = i_curve // ncols
+            ax = fig.add_subplot(gs[gs_i, gs_j])
+            if i_curve == 0:
+                ax_save = ax
+            ax.sharex(ax_save)
+            ax.sharey(ax_save)
+            for i in range(6):
+                ax.plot(knorm,
+                        Winv2[:,i_curve]*np.abs(Vvec[:,i,i_curve]),
+                        '.', label=f'{A[i]}')
+            ax.set_title(f'#{i_curve}')
+            if gs_i == 1:
+                ax.set_xlabel('phonon wavector')
+            if gs_j == 0:
+                ax.set_ylabel('phonon intensity')
+            ax.set_yscale('log')
+            if i_curve == 0:
+                ax.legend()
+        plt.show()
