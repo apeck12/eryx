@@ -862,6 +862,7 @@ class NonInteractingDeformableMolecules:
             Id = self.compute_scl_intensity()
         else:
             Id = self.compute_intensity_naive()
+        Id[:, ~self.res_mask] = np.nan
         return Id
 
 class OnePhonon:
@@ -1257,7 +1258,7 @@ class OnePhonon:
                     self.Winv[dh, dk, dl] = s
                     self.V[dh, dk, dl] = u
 
-    def apply_disorder(self):
+    def apply_disorder(self, rank=-1, outdir=None):
         """
         Compute the diffuse intensity in the one-phonon scattering
         disorder model originating from a Gaussian Network Model
@@ -1292,8 +1293,17 @@ class OnePhonon:
                     F = F.reshape((q_indices.shape[0],
                                    self.n_asu * self.n_dof_per_asu))
 
-                    Id[q_indices] += np.dot(
-                        np.square(np.abs(np.dot(F, self.V[dh, dk, dl]))),
-                        self.Winv[dh, dk, dl])
+                    if rank == -1:
+                        Id[q_indices] += np.dot(
+                            np.square(np.abs(np.dot(F, self.V[dh, dk, dl]))),
+                            self.Winv[dh, dk, dl])
+                    else:
+                        Id[q_indices] += np.square(
+                            np.abs(np.dot(F, self.V[dh,dk,dl,:,rank]))) * \
+                                         self.Winv[dh,dk,dl,:,rank]
+        Id[:, ~self.res_mask] = np.nan
+        Id = np.real(Id)
+        if outdir is not None:
+            np.save(os.path.join(outdir, f"rank_{rank:05}.npy"), Id)
+        return Id
 
-        return np.real(Id)

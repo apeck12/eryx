@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.gridspec import GridSpec
 import numpy as np
 import plotly.graph_objects as go
 
@@ -233,3 +234,55 @@ class VisualizeCrystal:
             color_dict = mcolors.CSS4_COLORS
         color_array = np.array(list(color_dict.items()))
         return color_array[::color_array.shape[0]//ndx,1][idx]
+
+class PhononPlots:
+
+    def __init__(self, phonon):
+        self.phonon = phonon
+
+    def _get_dispersion(self, h=True, k=True, l=True):
+        w = np.sqrt(1. / np.real(self.phonon.Winv))
+        k_norm = np.zeros((self.phonon.hsampling[2]))
+        w_curve = np.zeros((self.phonon.hsampling[2], w.shape[-1]))
+        for i in range(self.phonon.hsampling[2]):
+            w_curve[i] = w[h * i, k * i, l * i]
+            k_norm[i] = self.phonon.kvec_norm[h * i, k * i, l * i]
+        return k_norm, w_curve
+
+    def dispersion_curve(self):
+        nrows = 2
+        ncols = 4
+        fig = plt.figure(figsize=(2 * ncols, 2 * nrows), constrained_layout=True)
+        gs = GridSpec(nrows, ncols, figure=fig)
+
+        title   = ['0->h','0->k','0->l','0->h+k','0->h+l','0->k+l','0->h+k+l']
+        h_curve = [True,  False, False, True,  True,  False, True]
+        k_curve = [False, True,  False, True,  False, True,  True]
+        l_curve = [False, False, True,  False, True,  True,  True]
+
+        for i_curve in range(8):
+            gs_j = i_curve % ncols
+            gs_i = i_curve // ncols
+            ax = fig.add_subplot(gs[gs_i, gs_j])
+            if i_curve == 0:
+                ax_save = ax
+            if i_curve < 7:
+                ax.sharex(ax_save)
+                ax.sharey(ax_save)
+                knorm, wvec = self._get_dispersion(h=h_curve[i_curve],
+                                                   k=k_curve[i_curve],
+                                                   l=l_curve[i_curve])
+                for i in range(wvec.shape[-1]):
+                    ax.plot(knorm, wvec[:, i], 'o')
+                    if gs_i == 1:
+                        ax.set_xlabel('phonon wavector')
+                    if gs_j == 0:
+                        ax.set_ylabel('phonon frequency')
+                ax.set_title(title[i_curve])
+            else:
+                ax.hist(np.sqrt(1. / np.real(self.phonon.Winv).flatten()),
+                        bins=50, orientation='horizontal')
+                ax.set_title('density of states')
+        plt.tight_layout()
+        plt.show()
+
