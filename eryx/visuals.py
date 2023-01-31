@@ -1,9 +1,10 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.gridspec import GridSpec
 import numpy as np
 import plotly.graph_objects as go
 
-def visualize_central_slices(I, vmax_scale=5):
+def visualize_central_slices(I, vmax_scale=5, contour=False):
     """
     Plot central slices from the input map,  assuming
     that the map is centered around h,k,l=(0,0,0).
@@ -18,18 +19,29 @@ def visualize_central_slices(I, vmax_scale=5):
     f, (ax1,ax2,ax3) = plt.subplots(1, 3, figsize=(12,4))
     map_shape = I.shape
     vmax = I[~np.isnan(I)].mean()*vmax_scale
-    
-    ax1.imshow(I[int(map_shape[0]/2),:,:], vmax=vmax)
-    ax2.imshow(I[:,int(map_shape[1]/2),:], vmax=vmax)
-    ax3.imshow(I[:,:,int(map_shape[2]/2)], vmax=vmax)
+
+    if contour:
+        ax1.contourf(I[int(map_shape[0] / 2), :, :], origin='upper')
+        ax2.contourf(I[:, int(map_shape[1] / 2), :], origin='upper')
+        ax3.contourf(I[:, :, int(map_shape[2] / 2)], origin='upper')
+
+        ax1.set_title("View along h", fontsize=14)
+        ax2.set_title("View along k", fontsize=14)
+        ax3.set_title("View along l", fontsize=14)
+
+    else:
+        ax1.imshow(I[int(map_shape[0]/2),:,:], vmax=vmax)
+        ax2.imshow(I[:,int(map_shape[1]/2),:], vmax=vmax)
+        ax3.imshow(I[:,:,int(map_shape[2]/2)], vmax=vmax)
+
+        ax1.set_title("(0,k,l)", fontsize=14)
+        ax2.set_title("(h,0,l)", fontsize=14)
+        ax3.set_title("(h,k,0)", fontsize=14)
 
     ax1.set_aspect(map_shape[2]/map_shape[1])
     ax2.set_aspect(map_shape[2]/map_shape[0])
     ax3.set_aspect(map_shape[1]/map_shape[0])
 
-    ax1.set_title("(0,k,l)", fontsize=14)
-    ax2.set_title("(h,0,l)", fontsize=14)
-    ax3.set_title("(h,k,0)", fontsize=14)
 
     for ax in [ax1,ax2,ax3]:
         ax.set_xticks([])
@@ -233,3 +245,90 @@ class VisualizeCrystal:
             color_dict = mcolors.CSS4_COLORS
         color_array = np.array(list(color_dict.items()))
         return color_array[::color_array.shape[0]//ndx,1][idx]
+
+class PhononPlots:
+
+    def __init__(self, phonon):
+        self.phonon = phonon
+
+    def _get_dispersion(self, h=True, k=True, l=True):
+        w = np.sqrt(1. / np.real(self.phonon.Winv))
+        k_norm = np.zeros((self.phonon.hsampling[2]))
+        w_curve = np.zeros((self.phonon.hsampling[2], w.shape[-1]))
+        for i in range(self.phonon.hsampling[2]):
+            w_curve[i] = w[h * i, k * i, l * i]
+            k_norm[i] = self.phonon.kvec_norm[h * i, k * i, l * i]
+        return k_norm, w_curve
+
+    def dispersion_curve(self):
+        nrows = 2
+        ncols = 4
+        fig = plt.figure(figsize=(2 * ncols, 4 * nrows), dpi=180,
+                         constrained_layout=True)
+        gs = GridSpec(nrows, ncols, figure=fig)
+
+        title   = ['0->h','0->k','0->l','0->h+k','0->h+l','0->k+l','0->h+k+l']
+        h_curve = [True,  False, False, True,  True,  False, True]
+        k_curve = [False, True,  False, True,  False, True,  True]
+        l_curve = [False, False, True,  False, True,  True,  True]
+
+        for i_curve in range(8):
+            gs_j = i_curve % ncols
+            gs_i = i_curve // ncols
+            ax = fig.add_subplot(gs[gs_i, gs_j])
+            if i_curve == 0:
+                ax_save = ax
+            if i_curve < 7:
+                ax.sharex(ax_save)
+                ax.sharey(ax_save)
+                knorm, wvec = self._get_dispersion(h=h_curve[i_curve],
+                                                   k=k_curve[i_curve],
+                                                   l=l_curve[i_curve])
+                for i in range(wvec.shape[-1]):
+                    ax.plot(knorm, wvec[:, i], 'o', label=f'#{i}')
+                    if gs_i == 1:
+                        ax.set_xlabel('phonon wavevector ($\mathrm{\AA}^{-1}$)')
+                    if gs_j == 0:
+                        ax.set_ylabel('phonon frequency')
+                if i_curve == 3:
+                    ax.legend(bbox_to_anchor=(1.1,0.5))
+                ax.set_title(title[i_curve])
+            else:
+                ax.hist(np.sqrt(1. / np.real(self.phonon.Winv).flatten()),
+                        bins=50, orientation='horizontal')
+                ax.set_title('density of states')
+        plt.tight_layout()
+        plt.show()
+
+    def contribution_curve(self):
+        nrows=2
+        ncols=3
+        fig = plt.figure(figsize=(2 * ncols, 3 * nrows), dpi=180,
+                         constrained_layout=True)
+        gs = GridSpec(nrows, ncols, figure=fig)
+        knorm = self.phonon.kvec_norm.reshape(-1,1)
+        Winv2 = np.real(self.phonon.Winv).reshape(-1,6)
+        Vvec  = self.phonon.V.reshape(-1,6,6)
+        A = ['x', 'y', 'z', 'r1', 'r2', 'r3']
+
+        for i_curve in range(6):
+            gs_j = i_curve % ncols
+            gs_i = i_curve // ncols
+            ax = fig.add_subplot(gs[gs_i, gs_j])
+            if i_curve == 0:
+                ax_save = ax
+            ax.sharex(ax_save)
+            ax.sharey(ax_save)
+            for i in range(6):
+                ax.plot(knorm,
+                        Winv2[:,i_curve]*np.abs(Vvec[:,i,i_curve]),
+                        '.', label=f'{A[i]}')
+            ax.set_title(f'#{i_curve}')
+            if gs_i == 1:
+                ax.set_xlabel('phonon wavevector ($\mathrm{\AA}^{-1}$)')
+            if gs_j == 0:
+                ax.set_ylabel('phonon intensity')
+            ax.set_yscale('log')
+            if i_curve == 2:
+                ax.legend(bbox_to_anchor=(2.1,0.5))
+        plt.show()

@@ -862,6 +862,7 @@ class NonInteractingDeformableMolecules:
             Id = self.compute_scl_intensity()
         else:
             Id = self.compute_intensity_naive()
+        Id[:, ~self.res_mask] = np.nan
         return Id
 
 class OnePhonon:
@@ -1234,6 +1235,8 @@ class OnePhonon:
                     v, w, _ = np.linalg.svd(Dmat)
                     w = np.sqrt(w)
                     w = np.where(w < 1e-6, np.nan, w)
+                    w = w[::-1]
+                    v = v[:,::-1]
                     self.Winv[dh, dk, dl] = 1. / w ** 2
                     self.V[dh, dk, dl] = np.matmul(self.Linv.T, v)
 
@@ -1257,7 +1260,7 @@ class OnePhonon:
                     self.Winv[dh, dk, dl] = s
                     self.V[dh, dk, dl] = u
 
-    def apply_disorder(self):
+    def apply_disorder(self, rank=-1, outdir=None):
         """
         Compute the diffuse intensity in the one-phonon scattering
         disorder model originating from a Gaussian Network Model
@@ -1292,8 +1295,29 @@ class OnePhonon:
                     F = F.reshape((q_indices.shape[0],
                                    self.n_asu * self.n_dof_per_asu))
 
-                    Id[q_indices] += np.dot(
-                        np.square(np.abs(np.dot(F, self.V[dh, dk, dl]))),
-                        self.Winv[dh, dk, dl])
+                    if rank == -1:
+                        Id[q_indices] += np.dot(
+                            np.square(np.abs(np.dot(F, self.V[dh, dk, dl]))),
+                            self.Winv[dh, dk, dl])
+                    else:
+                        Id[q_indices] += np.square(
+                            np.abs(np.dot(F, self.V[dh,dk,dl,:,rank]))) * \
+                                         self.Winv[dh,dk,dl,:,rank]
+        Id[~self.res_mask] = np.nan
+        Id = np.real(Id)
+        if outdir is not None:
+            np.save(os.path.join(outdir, f"rank_{rank:05}.npy"), Id)
+        return Id
 
-        return np.real(Id)
+class OnePhononBrillouin:
+
+    def __init__(self, pdb_path, h, k, l, N,
+                 group_by='asu', model='gnm',
+                 gnm_cutoff=4., gamma_intra=1., gamma_inter=1.,
+                 batch_size=10000, n_processes=8):
+        self.phonon = OnePhonon(pdb_path,(h-1,h+1,N),(k-1,k+1,N), (l-1,l+1,N),
+                                group_by=group_by, model=model,
+                                gnm_cutoff=gnm_cutoff, gamma_intra=gamma_intra, gamma_inter=gamma_inter,
+                                batch_size=batch_size, n_processes=n_processes)
+        self.Id = self.phonon.apply_disorder().reshape(self.phonon.map_shape)[N//2+1:-N//2,N//2+1:-N//2,N//2+1:-N//2]
+
