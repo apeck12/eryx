@@ -1301,9 +1301,21 @@ class OnePhonon:
                         Id[q_indices] += np.square(
                             np.abs(np.dot(F, self.V[dh,dk,dl,:,rank]))) * \
                                          self.Winv[dh,dk,dl,:,rank]
-        Id[:, ~self.res_mask] = np.nan
+        Id[~self.res_mask] = np.nan
         Id = np.real(Id)
         if outdir is not None:
             np.save(os.path.join(outdir, f"rank_{rank:05}.npy"), Id)
         return Id
+
+class OnePhononBrillouin:
+
+    def __init__(self, pdb_path, h, k, l, N,
+                 group_by='asu', model='gnm',
+                 gnm_cutoff=4., gamma_intra=1., gamma_inter=1.,
+                 batch_size=10000, n_processes=8):
+        self.phonon = OnePhonon(pdb_path,(h-1,h+1,N),(k-1,k+1,N), (l-1,l+1,N),
+                                group_by=group_by, model=model,
+                                gnm_cutoff=gnm_cutoff, gamma_intra=gamma_intra, gamma_inter=gamma_inter,
+                                batch_size=batch_size, n_processes=n_processes)
+        self.Id = self.phonon.apply_disorder().reshape(self.phonon.map_shape)[N//2+1:-N//2,N//2+1:-N//2,N//2+1:-N//2]
 

@@ -4,7 +4,7 @@ from matplotlib.gridspec import GridSpec
 import numpy as np
 import plotly.graph_objects as go
 
-def visualize_central_slices(I, vmax_scale=5):
+def visualize_central_slices(I, vmax_scale=5, contour=False):
     """
     Plot central slices from the input map,  assuming
     that the map is centered around h,k,l=(0,0,0).
@@ -19,10 +19,15 @@ def visualize_central_slices(I, vmax_scale=5):
     f, (ax1,ax2,ax3) = plt.subplots(1, 3, figsize=(12,4))
     map_shape = I.shape
     vmax = I[~np.isnan(I)].mean()*vmax_scale
-    
-    ax1.imshow(I[int(map_shape[0]/2),:,:], vmax=vmax)
-    ax2.imshow(I[:,int(map_shape[1]/2),:], vmax=vmax)
-    ax3.imshow(I[:,:,int(map_shape[2]/2)], vmax=vmax)
+
+    if contour:
+        ax1.contourf(I[int(map_shape[0] / 2), :, :], origin='upper')
+        ax2.contourf(I[:, int(map_shape[1] / 2), :], origin='upper')
+        ax3.contourf(I[:, :, int(map_shape[2] / 2)], origin='upper')
+    else:
+        ax1.imshow(I[int(map_shape[0]/2),:,:], vmax=vmax)
+        ax2.imshow(I[:,int(map_shape[1]/2),:], vmax=vmax)
+        ax3.imshow(I[:,:,int(map_shape[2]/2)], vmax=vmax)
 
     ax1.set_aspect(map_shape[2]/map_shape[1])
     ax2.set_aspect(map_shape[2]/map_shape[0])
