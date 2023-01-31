@@ -290,8 +290,8 @@ class PhononPlots:
                         ax.set_xlabel('phonon wavector')
                     if gs_j == 0:
                         ax.set_ylabel('phonon frequency')
-                if i_curve == 0:
-                    ax.legend()
+                if i_curve == 3:
+                    ax.legend(bbox_to_anchor=(1.1,0.5))
                 ax.set_title(title[i_curve])
             else:
                 ax.hist(np.sqrt(1. / np.real(self.phonon.Winv).flatten()),
