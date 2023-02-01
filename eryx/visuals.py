@@ -375,7 +375,17 @@ class DeltaPDF:
             self.Id = Id
         else:
             self.Id = self.disorder_model.apply_disorder()
+        self._fill_integral_Miller_points()
         self._subtract_radial_average()
+
+    def _fill_integral_Miller_points(self):
+        Id_filled = np.copy(self.Id)
+        for q in self.disorder_model._at_kvec_from_miller_points((0, 0, 0)):
+            if q < Id_filled.shape[0] - 1:
+                Id_filled[q] = 0.5 * Id_filled[q - 1] + 0.5 * Id_filled[q + 1]
+            else:
+                Id_filled[q] = Id_filled[q - 1]
+        self.Id = Id_filled
 
     def _subtract_radial_average(self):
         q2 = np.linalg.norm(self.q_grid, axis=1) ** 2
@@ -383,11 +393,11 @@ class DeltaPDF:
                                                  return_inverse=True)
         for i in range(q2_unique.shape[0]):
             self.Id[np.round(q2, 2) == q2_unique[i]] -= \
-                np.mean(self.If[np.round(q2, 2) == q2_unique[i]])
+                np.mean(self.Id[np.round(q2, 2) == q2_unique[i]])
 
     def compute_patterson(self):
         np.nan_to_num(self.Id, copy=False, nan=0.0)
-        self.pdf = np.real(np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(self.Id.reshape(self.map_shape)))))
+        self.pdf = np.real(np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(self.Id.reshape(self.disorder_model.map_shape)))))
 
     def show(self, contour=False):
         if self.pdf is None:
