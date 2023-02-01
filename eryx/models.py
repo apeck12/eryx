@@ -865,7 +865,7 @@ class NonInteractingDeformableMolecules:
             Id = self.compute_scl_intensity()
         else:
             Id = self.compute_intensity_naive()
-        Id[:, ~self.res_mask] = np.nan
+        Id[~self.res_mask] = np.nan
         return Id
 
 class OnePhonon:

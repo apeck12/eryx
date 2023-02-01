@@ -4,7 +4,7 @@ from matplotlib.gridspec import GridSpec
 import numpy as np
 import plotly.graph_objects as go
 
-def visualize_central_slices(I, vmax_scale=5, contour=False):
+def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
     """
     Plot central slices from the input map,  assuming
     that the map is centered around h,k,l=(0,0,0).
@@ -21,9 +21,11 @@ def visualize_central_slices(I, vmax_scale=5, contour=False):
     vmax = I[~np.isnan(I)].mean()*vmax_scale
 
     if contour:
-        ax1.contourf(I[int(map_shape[0] / 2), :, :], origin='upper')
-        ax2.contourf(I[:, int(map_shape[1] / 2), :], origin='upper')
-        ax3.contourf(I[:, :, int(map_shape[2] / 2)], origin='upper')
+        if contour_cmap is None:
+            contour_cmap = 'viridis'
+        ax1.contourf(I[int(map_shape[0] / 2), :, :], origin='upper', cmap=contour_cmap)
+        ax2.contourf(I[:, int(map_shape[1] / 2), :], origin='upper', cmap=contour_cmap)
+        ax3.contourf(I[:, :, int(map_shape[2] / 2)], origin='upper', cmap=contour_cmap)
 
         ax1.set_title("View along h", fontsize=14)
         ax2.set_title("View along k", fontsize=14)
@@ -362,3 +364,72 @@ class PhononPlots:
             if i_curve == 2:
                 ax.legend(bbox_to_anchor=(2.1,0.5))
         plt.show()
+
+class DeltaPDF:
+
+    def __init__(self, disorder_model, Id=None, fill_bragg=True):
+        self.disorder_model = disorder_model
+        self.q_grid = self.disorder_model.q_grid
+        self.hsampling = self.disorder_model.hsampling
+        self.ksampling = self.disorder_model.ksampling
+        self.lsampling = self.disorder_model.lsampling
+        self.map_shape = self.disorder_model.map_shape
+        self.pdf = None
+        if Id is not None:
+            self.Id = Id
+        else:
+            self.Id = self.disorder_model.apply_disorder()
+        if fill_bragg:
+            self._fill_integral_Miller_points()
+        self._subtract_radial_average()
+
+    def _fill_integral_Miller_points(self):
+        Id_filled = np.copy(self.Id)
+        for q in self._at_kvec_from_miller_points((0, 0, 0)):
+            if q < Id_filled.shape[0] - 1:
+                Id_filled[q] = 0.5 * Id_filled[q - 1] + 0.5 * Id_filled[q + 1]
+            else:
+                Id_filled[q] = Id_filled[q - 1]
+        self.Id = Id_filled
+
+    def _at_kvec_from_miller_points(self, hkl_kvec):
+        """
+        Return the indices of all q-vector that are k-vector away from any
+        Miller index in the map.
+
+        Parameters
+        ----------
+        hkl_kvec : tuple of ints
+            fractional Miller index of the desired k-vector
+        """
+        hsteps = int(self.hsampling[2] * (self.hsampling[1] - self.hsampling[0]) + 1)
+        ksteps = int(self.ksampling[2] * (self.ksampling[1] - self.ksampling[0]) + 1)
+        lsteps = int(self.lsampling[2] * (self.lsampling[1] - self.lsampling[0]) + 1)
+
+        index_grid = np.mgrid[
+                     hkl_kvec[0]:hsteps:self.hsampling[2],
+                     hkl_kvec[1]:ksteps:self.ksampling[2],
+                     hkl_kvec[2]:lsteps:self.lsampling[2]]
+
+        return np.ravel_multi_index((index_grid[0].flatten(),
+                                     index_grid[1].flatten(),
+                                     index_grid[2].flatten()),
+                                    self.map_shape)
+
+    def _subtract_radial_average(self):
+        q2 = np.linalg.norm(self.q_grid, axis=1) ** 2
+        q2_unique, q2_unique_inverse = np.unique(np.round(q2, 2),
+                                                 return_inverse=True)
+        for i in range(q2_unique.shape[0]):
+            self.Id[np.round(q2, 2) == q2_unique[i]] -= \
+                np.mean(self.Id[np.round(q2, 2) == q2_unique[i]])
+
+    def compute_patterson(self):
+        np.nan_to_num(self.Id, copy=False, nan=0.0)
+        self.pdf = np.real(np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(self.Id.reshape(self.disorder_model.map_shape)))))
+
+    def show(self, contour=False):
+        if self.pdf is None:
+            self.compute_patterson()
+        visualize_central_slices(self.pdf, contour=contour, contour_cmap='seismic')
+
