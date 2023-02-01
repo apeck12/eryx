@@ -982,6 +982,7 @@ class OnePhonon:
         if model == 'gnm':
             self._setup_gnm(pdb_path, gnm_cutoff, gamma_intra, gamma_inter)
             self.compute_gnm_phonons()
+            self.compute_covariance_matrix()
         else:
             self.compute_rb_phonons()
 
@@ -1217,6 +1218,38 @@ class OnePhonon:
 
         return hessian
 
+    def compute_covariance_matrix(self):
+        """
+        Compute covariance matrix for all asymmetric units.
+        The covariance matrix results from modelling pairwise
+        interactions with a Gaussian Network Model where atom
+        pairs belonging to different asymmetric units are not
+        interacting. It is scaled to match the ADPs in the input PDB file.
+        """
+        self.covar = np.zeros((self.n_asu*self.n_dof_per_asu,
+                               self.n_cell, self.n_asu*self.n_dof_per_asu),
+                              dtype='complex')
+
+        hessian = self.compute_hessian()
+        for dh in range(self.hsampling[2]):
+            for dk in range(self.ksampling[2]):
+                for dl in range(self.lsampling[2]):
+                    kvec = self.kvec[dh,dk,dl]
+                    Kinv = self.gnm.compute_Kinv(hessian, kvec=kvec, reshape=False)
+                    for j_cell in range(self.n_cell):
+                        r_cell = self.crystal.get_unitcell_origin(self.crystal.id_to_hkl(j_cell))
+                        phase = np.dot(kvec, r_cell)
+                        eikr = np.cos(phase) + 1j * np.sin(phase)
+                        self.covar[:,j_cell,:] += Kinv * eikr
+        ADP_scale = np.mean(self.model.adp[0]) / \
+                    (8 * np.pi * np.pi * np.mean(np.diag(self.covar[:,self.crystal.hkl_to_id([0,0,0]),:])) / 3.)
+        self.covar *= ADP_scale
+        self.ADP = np.real(np.diag(self.covar[:,self.crystal.hkl_to_id([0,0,0]),:]))
+        self.ADP = self.Amat[0] @ self.ADP
+        self.ADP = np.sum(self.ADP.reshape(int(self.ADP.shape[0]/3),3),axis=1)
+        self.covar = np.real(self.covar.reshape((self.n_asu, self.n_dof_per_asu,
+                                                 self.n_cell, self.n_asu, self.n_dof_per_asu)))
+
     def compute_gnm_phonons(self):
         """
         Compute the dynamical matrix for each k-vector in the first
@@ -1289,7 +1322,7 @@ class OnePhonon:
                             self.model.ff_a[i_asu],
                             self.model.ff_b[i_asu],
                             self.model.ff_c[i_asu],
-                            U=None,
+                            U=self.ADP,
                             batch_size=self.batch_size,
                             n_processes=self.n_processes,
                             compute_qF=True,
