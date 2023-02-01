@@ -50,7 +50,7 @@ def visualize_central_slices(I, vmax_scale=5, contour=False):
 
 class VisualizeCrystal:
 
-    def __init__(self, crystal, gnm=None, nidm=None):
+    def __init__(self, crystal, gnm=None, nidm=None, onephonon=None):
         """
         Plotly helper functions to visualize the Crystal object.
         Parameters
@@ -69,6 +69,9 @@ class VisualizeCrystal:
         self.nidm = nidm # if not None, show intra ASU covariances
         if self.nidm is not None:
             self.nidm_covar_indices = self._setup_nidm_covar()
+        self.onephonon = onephonon
+        if self.onephonon is not None:
+            self.onephonon_covar_indices = self._setup_onephonon_covar()
 
     def show(self):
         """
@@ -94,6 +97,9 @@ class VisualizeCrystal:
                                                i_asu, unit_cell=[h,k,l])
                         if self.nidm is not None:
                             self._draw_network(self.nidm_covar_indices,
+                                               i_asu, unit_cell=[h,k,l])
+                        if self.onephonon is not None:
+                            self._draw_network(self.onephonon_covar_indices,
                                                i_asu, unit_cell=[h,k,l])
 
     def draw_unit_cell_axes(self, origin=np.array([0., 0., 0.]), showlegend=False):
@@ -176,6 +182,30 @@ class VisualizeCrystal:
                     if i_asu == j_asu and j_cell == self.crystal.hkl_to_id([0,0,0]):
                         indices[i_asu][j_cell][j_asu] = asu_indices
         return indices
+
+    def _setup_onephonon_covar(self):
+        # inter first
+        covar_inter = np.copy(self.onephonon.covar)
+        covar_inter[:,:,self.onephonon.crystal.hkl_to_id([0,0,0]),:,:] *= 0.
+        threshold = np.mean(covar_inter.flatten()) + 2*np.std(covar_inter.flatten())
+
+        indices = []
+        for i_asu in range(self.onephonon.n_asu):
+            indices.append([])
+            for j_cell in range(self.onephonon.n_cell):
+                indices[i_asu].append([])
+                for j_asu in range(self.onephonon.n_asu):
+                    indices[i_asu][j_cell].append([])
+                    asu_indices = []
+                    pairs = np.where(covar_inter[i_asu,:,j_cell,j_asu,:] > threshold)
+                    for i in range(self.crystal.get_asu_xyz().shape[0]):
+                        i_indices = np.where(pairs[0]==i)
+                        j = pairs[1][i_indices]
+                        #j_indices = np.where(pairs[1][i_indices]>i)[0]
+                        asu_indices.append(j.tolist())
+                    indices[i_asu][j_cell][j_asu] = asu_indices
+        return indices
+
 
     def _draw_network(self, indices, asu_id=0, unit_cell=None, showlegend=False):
         if unit_cell is None:

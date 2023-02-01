@@ -620,7 +620,7 @@ class GaussianNetworkModel:
                     Kmat[i_asu, :, j_asu, :] += hessian[i_asu, :, j_cell, j_asu, :] * eikr
         return Kmat
 
-    def compute_Kinv(self, hessian, kvec=None):
+    def compute_Kinv(self, hessian, kvec=None, reshape=True):
         """
         Compute the inverse of K(kvec)
         (see compute_K() for the relationship between K and the hessian).
@@ -644,6 +644,7 @@ class GaussianNetworkModel:
         Kshape = Kmat.shape
         Kinv = np.linalg.pinv(Kmat.reshape(Kshape[0] * Kshape[1],
                                            Kshape[2] * Kshape[3]))
-        Kinv = Kinv.reshape((Kshape[0], Kshape[1],
-                             Kshape[2], Kshape[3]))
+        if reshape:
+            Kinv = Kinv.reshape((Kshape[0], Kshape[1],
+                                 Kshape[2], Kshape[3]))
         return Kinv
