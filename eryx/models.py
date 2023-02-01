@@ -206,6 +206,7 @@ class LiquidLikeMotions:
         self.scan_sigmas = []
         self.scan_gammas = []
         self.scan_ccs = []
+        self.opt_map = None
         
     def fft_convolve(self, transform, kernel):
         """ 
@@ -350,6 +351,8 @@ class LiquidLikeMotions:
         Id = Id[:,self.mask.flatten()==1]
         ccs = compute_cc(Id, np.expand_dims(target.flatten(), axis=0))
         opt_index = np.argmax(ccs)
+        if self.opt_map is None:
+            self.opt_map = Id[opt_index].reshape(self.map_shape_nopad)
         if self.scan_ccs and np.max(ccs) > np.max(np.array(self.scan_ccs)):
             self.opt_map = Id[opt_index].reshape(self.map_shape_nopad)
         
@@ -1302,7 +1305,7 @@ class OnePhonon:
                     else:
                         Id[q_indices] += np.square(
                             np.abs(np.dot(F, self.V[dh,dk,dl,:,rank]))) * \
-                                         self.Winv[dh,dk,dl,:,rank]
+                                         self.Winv[dh,dk,dl,rank]
         Id[~self.res_mask] = np.nan
         Id = np.real(Id)
         if outdir is not None:
