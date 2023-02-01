@@ -1246,8 +1246,8 @@ class OnePhonon:
         #self.covar *= ADP_scale
         self.ADP = np.real(np.diag(self.covar[:,self.crystal.hkl_to_id([0,0,0]),:]))
         self.ADP = self.Amat[0] @ self.ADP
-        self.ADP = 8*np.pi*np.pi*np.sum(self.ADP.reshape(int(self.ADP.shape[0]/3),3),axis=1)
-        ADP_scale = np.mean(self.model.adp[0]) / np.mean(self.ADP)
+        self.ADP = np.sum(self.ADP.reshape(int(self.ADP.shape[0]/3),3),axis=1)
+        ADP_scale = np.mean(self.model.adp[0]) / (8*np.pi*np.pi*np.mean(self.ADP)/3)
         self.ADP *= ADP_scale
         self.covar *= ADP_scale
         self.covar = np.real(self.covar.reshape((self.n_asu, self.n_dof_per_asu,
@@ -1299,13 +1299,17 @@ class OnePhonon:
                     self.Winv[dh, dk, dl] = s
                     self.V[dh, dk, dl] = u
 
-    def apply_disorder(self, rank=-1, outdir=None):
+    def apply_disorder(self, rank=-1, outdir=None, use_data_adp=False):
         """
         Compute the diffuse intensity in the one-phonon scattering
         disorder model originating from a Gaussian Network Model
         representation of the asymmetric units, optionally reduced
         to a set of interacting rigid bodies.
         """
+        if use_data_adp:
+            ADP = 3. * self.model.adp[0] / (8 * np.pi * np.pi)
+        else:
+            ADP = self.ADP
         Id = np.zeros((self.q_grid.shape[0]), dtype='complex')
         for dh in tqdm(range(self.hsampling[2])):
             for dk in range(self.ksampling[2]):
@@ -1325,7 +1329,7 @@ class OnePhonon:
                             self.model.ff_a[i_asu],
                             self.model.ff_b[i_asu],
                             self.model.ff_c[i_asu],
-                            U=self.ADP,
+                            U=ADP,
                             batch_size=self.batch_size,
                             n_processes=self.n_processes,
                             compute_qF=True,
