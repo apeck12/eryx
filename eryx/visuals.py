@@ -367,9 +367,13 @@ class PhononPlots:
 
 class DeltaPDF:
 
-    def __init__(self, disorder_model, Id=None, fill_bragg=True:
+    def __init__(self, disorder_model, Id=None, fill_bragg=True):
         self.disorder_model = disorder_model
         self.q_grid = self.disorder_model.q_grid
+        self.hsampling = self.disorder_model.hsampling
+        self.ksampling = self.disorder_model.ksampling
+        self.lsampling = self.disorder_model.lsampling
+        self.map_shape = self.disorder_model.map_shape
         self.pdf = None
         if Id is not None:
             self.Id = Id
@@ -381,12 +385,36 @@ class DeltaPDF:
 
     def _fill_integral_Miller_points(self):
         Id_filled = np.copy(self.Id)
-        for q in self.disorder_model._at_kvec_from_miller_points((0, 0, 0)):
+        for q in self._at_kvec_from_miller_points((0, 0, 0)):
             if q < Id_filled.shape[0] - 1:
                 Id_filled[q] = 0.5 * Id_filled[q - 1] + 0.5 * Id_filled[q + 1]
             else:
                 Id_filled[q] = Id_filled[q - 1]
         self.Id = Id_filled
+
+    def _at_kvec_from_miller_points(self, hkl_kvec):
+        """
+        Return the indices of all q-vector that are k-vector away from any
+        Miller index in the map.
+
+        Parameters
+        ----------
+        hkl_kvec : tuple of ints
+            fractional Miller index of the desired k-vector
+        """
+        hsteps = int(self.hsampling[2] * (self.hsampling[1] - self.hsampling[0]) + 1)
+        ksteps = int(self.ksampling[2] * (self.ksampling[1] - self.ksampling[0]) + 1)
+        lsteps = int(self.lsampling[2] * (self.lsampling[1] - self.lsampling[0]) + 1)
+
+        index_grid = np.mgrid[
+                     hkl_kvec[0]:hsteps:self.hsampling[2],
+                     hkl_kvec[1]:ksteps:self.ksampling[2],
+                     hkl_kvec[2]:lsteps:self.lsampling[2]]
+
+        return np.ravel_multi_index((index_grid[0].flatten(),
+                                     index_grid[1].flatten(),
+                                     index_grid[2].flatten()),
+                                    self.map_shape)
 
     def _subtract_radial_average(self):
         q2 = np.linalg.norm(self.q_grid, axis=1) ** 2
