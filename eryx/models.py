@@ -1302,7 +1302,7 @@ class OnePhonon:
                     else:
                         Id[q_indices] += np.square(
                             np.abs(np.dot(F, self.V[dh,dk,dl,:,rank]))) * \
-                                         self.Winv[dh,dk,dl,:,rank]
+                                         self.Winv[dh,dk,dl,rank]
         Id[~self.res_mask] = np.nan
         Id = np.real(Id)
         if outdir is not None:
