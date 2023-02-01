@@ -367,7 +367,7 @@ class PhononPlots:
 
 class DeltaPDF:
 
-    def __init__(self, disorder_model, Id=None):
+    def __init__(self, disorder_model, Id=None, fill_bragg=True:
         self.disorder_model = disorder_model
         self.q_grid = self.disorder_model.q_grid
         self.pdf = None
@@ -375,7 +375,8 @@ class DeltaPDF:
             self.Id = Id
         else:
             self.Id = self.disorder_model.apply_disorder()
-        self._fill_integral_Miller_points()
+        if fill_bragg:
+            self._fill_integral_Miller_points()
         self._subtract_radial_average()
 
     def _fill_integral_Miller_points(self):
