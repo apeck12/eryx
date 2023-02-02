@@ -3,6 +3,7 @@ import matplotlib.colors as mcolors
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 
 def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
     """
@@ -49,6 +50,29 @@ def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
         ax.set_xticks([])
         ax.set_yticks([])
 
+def slice_traversal(I, hkl_grid, traversed_index=0, traversed_range=None):
+    if traversed_range is None:
+        traversed_range = np.arange(I.shape[traversed_index])
+
+    if traversed_index == 0:
+        fig = px.imshow(I[traversed_range[0]:traversed_range[-1]+1,:,:], animation_frame=0)
+    elif traversed_index == 1:
+        fig = px.imshow(I[:,traversed_range[0]:traversed_range[-1]+1,:], animation_frame=1)
+    else:
+        fig = px.imshow(I[:,:,traversed_range[0]:traversed_range[-1]+1], animation_frame=2)
+
+    for i in range(traversed_range.shape[0]):
+        if traversed_index == 0:
+            hklval = hkl_grid[:,0].reshape(I.shape)[traversed_range[i],0,0]
+            fig["frames"][i]["layout"]["title"] = f'h={hklval:.2f}'
+        elif traversed_index == 1:
+            hklval = hkl_grid[:,0].reshape(I.shape)[0,traversed_range[i],0]
+            fig["frames"][i]["layout"]["title"] = f'k={hklval:.2f}'
+        else:
+            hklval = hkl_grid[:,0].reshape(I.shape)[0,0,traversed_range[i]]
+            fig["frames"][i]["layout"]["title"] = f'l={hklval:.2f}'
+
+    fig.show()
 
 class VisualizeCrystal:
 
@@ -224,7 +248,8 @@ class VisualizeCrystal:
                     xyz[1] = self.crystal.get_asu_xyz(asu_id,unit_cell)[j_at]
                     self._draw_go_vector(
                         self._build_go_vector(xyz=xyz,
-                                              line=dict(color=self._get_color(asu_id,unit_cell)),
+                                              line=dict(width=2,
+                                                        color=self._get_color(asu_id,unit_cell)),
                                               showlegend=showlegend))
 
     def _draw_go_vector(self, go_vector):
