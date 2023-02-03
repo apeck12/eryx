@@ -47,7 +47,31 @@ class RigidBodyTranslations:
         self.transform[self.transform==0] = np.nan # compute_cc expects masked values to be np.nan
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         self.map_shape = self.transform.shape
-    
+
+        self.scan_sigmas = []
+        self.scan_ccs = []
+
+    def plot_scan(self, output=None):
+        """
+        Plot results of scan, CC(sigma).
+
+        Parameters
+        ----------
+        output : str
+            if provided, save plot to given path
+        """
+        import matplotlib.pyplot as plt
+
+        sigmas = np.array(self.scan_sigmas)
+        ccs = np.array(self.scan_ccs)
+        plt.scatter(sigmas, ccs, c='black')
+        plt.plot(sigmas, ccs, c='black')
+        plt.xlabel("$\sigma$ ($\mathrm{\AA}$)", fontsize=14)
+        plt.ylabel("CC", fontsize=14)
+
+        if output is not None:
+            plt.savefig(output, dpi=300, bbox_inches='tight')
+        
     def apply_disorder(self, sigmas):
         """
         Compute the diffuse map(s) from the molecular transform:
@@ -111,7 +135,9 @@ class RigidBodyTranslations:
         opt_index = np.argmax(ccs)
         self.opt_sigma = sigmas[opt_index]
         self.opt_map = Id[opt_index].reshape(self.map_shape)
-
+        self.scan_sigmas.extend(list(sigmas))
+        self.scan_ccs.extend(list(ccs))
+        
         print(f"Optimal sigma: {self.opt_sigma}, with correlation coefficient {ccs[opt_index]:.4f}")
         return ccs, sigmas
 
