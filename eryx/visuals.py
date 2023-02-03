@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.gridspec import GridSpec
+from matplotlib import cm
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
+def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None, output=None, ylabel=None):
     """
     Plot central slices from the input map,  assuming
     that the map is centered around h,k,l=(0,0,0).
@@ -16,6 +17,10 @@ def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
         intensity map
     vmax_scale : float
         vmax will be vmax_scale*mean(I)
+    output : str
+        path to save figure to
+    ylabel : str
+        label for leftmost y axis
     """
     f, (ax1,ax2,ax3) = plt.subplots(1, 3, figsize=(12,4))
     map_shape = I.shape
@@ -31,7 +36,9 @@ def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
         ax1.set_title("View along h", fontsize=14)
         ax2.set_title("View along k", fontsize=14)
         ax3.set_title("View along l", fontsize=14)
-
+        if ylabel is not None:
+            ax1.set_ylabel(ylabel, fontsize=14)
+        
     else:
         ax1.imshow(I[int(map_shape[0]/2),:,:], vmax=vmax)
         ax2.imshow(I[:,int(map_shape[1]/2),:], vmax=vmax)
@@ -40,17 +47,111 @@ def visualize_central_slices(I, vmax_scale=5, contour=False, contour_cmap=None):
         ax1.set_title("(0,k,l)", fontsize=14)
         ax2.set_title("(h,0,l)", fontsize=14)
         ax3.set_title("(h,k,0)", fontsize=14)
+        if ylabel is not None:
+            ax1.set_ylabel(ylabel, fontsize=14)
 
     ax1.set_aspect(map_shape[2]/map_shape[1])
     ax2.set_aspect(map_shape[2]/map_shape[0])
     ax3.set_aspect(map_shape[1]/map_shape[0])
 
-
     for ax in [ax1,ax2,ax3]:
         ax.set_xticks([])
         ax.set_yticks([])
 
+    if output is not None:
+        f.savefig(output, bbox_inches='tight', dpi=300)
+
+def visualize_brillouin_zone(Id, hkl, hsampling, ksampling, lsampling, hkl_grid=None,
+                             A_inv=None, plot_3d=False, output=None, ylabel=None):
+    """
+    Visualize slices through a specific reciprocal lattice point. 
+    
+    Parameters
+    ----------
+    Id : numpy.ndarray, 3d
+        diffuse intensity map
+    hkl : tuple, shape (3)
+        reciprocal lattice point of interest
+    hsampling : tuple, shape (3,)
+        (hmin, hmax, oversampling) relative to Miller indices
+    ksampling : tuple, shape (3,)
+        (kmin, kmax, oversampling) relative to Miller indices
+    lsampling : tuple, shape (3,)
+        (lmin, lmax, oversampling) relative to Miller indices
+    hkl_grid : np.array, shape (n_grid_points, 3)
+        grid of hkl vectors if precomputed
+    A_inv : numpy.ndarray, shape (3,3)
+        fractional cell orthogonalization matrix
+    plot_3d : bool
+        if True, plot 3d surfacse rather than 2d contour plots
+    output : str
+        path to save figure to
+    ylabel : str
+        ylabel for leftmost plot, not used in plot_3d mode
+    """
+    if hkl_grid is None:
+        if A_inv is None:
+            raise ValueError("If hkl_grid is None, A_inv must be supplied.")
+        hkl_grid, map_shape = generate_grid(A_inv, 
+                                            hsampling,
+                                            ksampling, 
+                                            lsampling, 
+                                            return_hkl=True)
+    else:
+        map_shape = Id.shape
+        
+    # find origin and then center of (h,k,l) of interest
+    origin = np.argmin(np.sum(np.abs(hkl_grid), axis=1))
+    origin = np.unravel_index(origin, map_shape)
+    center = origin + np.array([hkl[0] * hsampling[2], hkl[1] * lsampling[2], hkl[2] * ksampling[2]])
+    center = np.around(center).astype(int)
+    
+    hwidths = (int(hsampling[2]/2), int(ksampling[2]/2), int(lsampling[2]/2))
+    bzone = Id[center[0]-hwidths[0]:center[0]+hwidths[0]+1,
+               center[1]-hwidths[1]:center[1]+hwidths[1]+1,
+               center[2]-hwidths[2]:center[2]+hwidths[2]+1].copy()
+    
+    if not plot_3d:
+        visualize_central_slices(bzone, contour=True, output=output, ylabel=ylabel)
+        
+    else:
+        bzone[np.isnan(bzone)] = 0
+        hkl_grid_reshape = hkl_grid.reshape(map_shape + (3,))
+        hklzone = hkl_grid_reshape[center[0]-hwidths[0]:center[0]+hwidths[0]+1,
+                                   center[1]-hwidths[1]:center[1]+hwidths[1]+1,
+                                   center[2]-hwidths[2]:center[2]+hwidths[2]+1]
+        
+        f, (ax1,ax2,ax3) = plt.subplots(1,3, figsize=(12,4), subplot_kw={"projection": "3d"})
+
+        max_val = bzone.max()
+        X,Y = hklzone[hwidths[0],:,:][:,:,1], hklzone[hwidths[0],:,:][:,:,2]
+        ax1.plot_surface(X,Y,bzone[hwidths[0],:,:]/max_val, cmap=cm.coolwarm)
+        ax1.set_xlabel("k", fontsize=12)
+        ax1.set_ylabel("l", fontsize=12)
+
+        X,Y = hklzone[:,hwidths[1],:][:,:,0], hklzone[:,hwidths[1],:][:,:,2]
+        ax2.plot_surface(X,Y,bzone[:,hwidths[1],:]/max_val, cmap=cm.coolwarm)
+        ax2.set_xlabel("h", fontsize=12)
+        ax2.set_ylabel("l", fontsize=12)
+
+        X,Y = hklzone[:,:,hwidths[2]][:,:,0], hklzone[:,:,hwidths[2]][:,:,1]
+        ax3.plot_surface(X,Y,bzone[:,:,hwidths[2]]/max_val, cmap=cm.coolwarm)
+        ax3.set_xlabel("h", fontsize=12)
+        ax3.set_ylabel("k", fontsize=12)
+        ax3.set_zlabel("Intensity", fontsize=12)
+
+        hklzone = hkl_grid_reshape[center[0]-hwidths[0]:center[0]+hwidths[0]+1,
+                                   center[1]-hwidths[1]:center[1]+hwidths[1]+1,
+                                   center[2]-hwidths[2]:center[2]+hwidths[2]+1]
+        
+        if output is not None:
+            f.savefig(output, bbox_inches='tight', dpi=300)
+        
 def slice_traversal(I, hkl_grid, traversed_index=0, traversed_range=None):
+    """
+    Create animation traversing through the h, k, or l planes
+    of the input intensity map. 
+    """
     if traversed_range is None:
         traversed_range = np.arange(I.shape[traversed_index])
 
