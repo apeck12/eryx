@@ -49,7 +49,8 @@ def molecular_transform_reference(pdb_path, model, hsampling, ksampling, lsampli
                                                 model.xyz[asu],
                                                 model.ff_a[asu], 
                                                 model.ff_b[asu], 
-                                                model.ff_c[asu])))
+                                                model.ff_c[asu],
+                                                parallelize=None)))
     return I.reshape(map_shape)
         
 class TestMolecularTransform:
@@ -66,8 +67,8 @@ class TestMolecularTransform:
         """ Check that two symmetrization approaches match reference. """
         for case in ['orthorhombic', 'trigonal', 'triclinic', 'tetragonal']:
             pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
-            hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=True)
-            hkl, I2 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=False)
+            hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, parallelize=None)
+            hkl, I2 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=False, parallelize=None)
             assert np.max(np.abs(self.Iref[case] -  I1)/I1) < 1e-2
             assert np.max(np.abs(self.Iref[case] -  I2)/I2) < 1e-2
             
@@ -75,8 +76,8 @@ class TestMolecularTransform:
         """ Check case of applying a mask to limit resolution. """
         for case in ['orthorhombic', 'trigonal', 'triclinic', 'tetragonal']:
             pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
-            hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=self.dmin[case])
-            hkl, I2 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=False, res_limit=self.dmin[case])
+            hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=self.dmin[case], parallelize=None)
+            hkl, I2 = compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, expand_friedel=False, res_limit=self.dmin[case], parallelize=None)
             assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
             assert np.max(np.abs(self.Iref[case][I2!=0] -  I2[I2!=0])/I2[I2!=0]) < 1e-2
     
@@ -84,12 +85,12 @@ class TestMolecularTransform:
         """ Check that the expand_friedel=True option correctly expands to full reciprocal grid. """
         case = 'tetragonal'
         pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
-        hkl, I1 = compute_molecular_transform(pdb_path, (0,10,1), ksampling, lsampling, expand_friedel=True, res_limit=self.dmin[case])
+        hkl, I1 = compute_molecular_transform(pdb_path, (0,10,1), ksampling, lsampling, expand_friedel=True, res_limit=self.dmin[case], parallelize=None)
         assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
         
         case = 'triclinic'
         pdb_path, model, hsampling, ksampling, lsampling = setup_model(case, expand_p1=True)
-        hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, (0,15,2), expand_friedel=True, res_limit=self.dmin[case])
+        hkl, I1 = compute_molecular_transform(pdb_path, hsampling, ksampling, (0,15,2), expand_friedel=True, res_limit=self.dmin[case], parallelize=None)
         assert np.max(np.abs(self.Iref[case][I1!=0] -  I1[I1!=0])/I1[I1!=0]) < 1e-2
         
 class TestRigidBodyTranslations:

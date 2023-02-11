@@ -135,8 +135,8 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
                                                       parallelize=parallelize)))
     return q_grid, I.reshape(map_shape)
 
-def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
-                                expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
+def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True, expand_friedel=True,
+                                res_limit=0, batch_size=5000, parallelize='multiprocess', implementation='torch'):
     """
     Compute the molecular transform as the incoherent sum of the 
     asymmetric units. If expand_p1 is False, the pdb is assumed 
@@ -170,8 +170,10 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
         high resolution limit
     batch_size : int
         number of q-vectors to evaluate per batch 
-    n_processes : int
-        number of processors over which to parallelize the calculation
+    parallelize : str
+        parallelization mode - multiprocess, ray, or None
+    implementation : str
+        structure factor implementation - torch or numpy
         
     Returns
     -------
@@ -180,6 +182,9 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
     I : numpy.ndarray, 3d
         intensity map of the molecular transform
     """
+    if implementation=='numpy':
+        override_import()
+
     model = AtomicModel(pdb_path, expand_p1=expand_p1)
     hkl_grid, map_shape = generate_grid(model.A_inv, 
                                         hsampling,
@@ -200,19 +205,19 @@ def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=Non
                                                           model.ff_c[asu],
                                                           U=U,
                                                           batch_size=batch_size,
-                                                          n_processes=n_processes)))
+                                                          parallelize=parallelize)))
         I = I.reshape(map_shape)
     else:
         if expand_friedel:
-            I = incoherent_sum_real(model, hkl_grid, sampling, U, mask, batch_size, n_processes)
+            I = incoherent_sum_real(model, hkl_grid, sampling, U, mask, batch_size, parallelize)
         else:
-            I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size, n_processes)
+            I = incoherent_sum_reciprocal(model, hkl_grid, sampling, U, batch_size, parallelize)
             I = I.reshape(map_shape)
             I[~mask.reshape(map_shape)] = 0
 
     return q_grid, I
 
-def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size=10000, n_processes=8):
+def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size=5000, parallelize='multiprocess'):
     """
     Compute the incoherent sum of the scattering from all asus.
     The scattering for the unique reciprocal wedge is computed 
@@ -235,8 +240,8 @@ def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size
         number of q-vectors to evaluate per batch
     mask : numpy.ndarray, shape (n_points,)
         boolean mask, where True indicates grid points to keep
-    n_processes : int
-        number of processors over which to parallelize the calculation
+    parallelize : str
+        parallelization mode - multiprocess, ray, or None
         
     Returns
     -------
@@ -259,7 +264,7 @@ def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size
                                                           model.ff_c[asu], 
                                                           U=U, 
                                                           batch_size=batch_size,
-                                                          n_processes=n_processes)))
+                                                          parallelize=parallelize)))
         
     # get symmetry information for expanded map
     sym_ops = expand_sym_ops(model.sym_ops)
@@ -284,7 +289,7 @@ def incoherent_sum_real(model, hkl_grid, sampling, U=None, mask=None, batch_size
     
     return I
     
-def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=10000, n_processes=8):
+def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=5000, parallelize='multiprocess'):
     """
     Compute the incoherent sum of the scattering from all asus.
     For each grid point, the symmetry-equivalents are determined
@@ -306,8 +311,8 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
         isotropic displacement parameters, applied to each asymmetric unit
     batch_size : int
         number of q-vectors to evaluate per batch
-    n_processes : int
-        number of processors over which to parallelize the calculation
+    parallelize : str
+        parallelization mode - multiprocess, ray, or None
         
     Returns
     -------
@@ -328,7 +333,7 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
                                                             model.ff_c[0],
                                                             U=U,
                                                             batch_size=batch_size,
-                                                            n_processes=n_processes)))
+                                                            parallelize=parallelize)))
         else:
             intersect1d, comm1, comm2 = np.intersect1d(ravel[0], ravel[asu], return_indices=True)
             I_sym[asu][comm2] = I_sym[0][comm1]
@@ -339,7 +344,7 @@ def incoherent_sum_reciprocal(model, hkl_grid, sampling, U=None, batch_size=1000
                                                                    model.ff_b[0],
                                                                    model.ff_c[0],
                                                                    U=U,
-                                                                   batch_size=batch_size)))
+                                                                   parallelize=parallelize)))
     I = np.sum(I_sym, axis=0)
     return I
 
