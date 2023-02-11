@@ -5,6 +5,7 @@ import os
 import psutil
 import multiprocess as mp
 from functools import partial
+from tqdm import tqdm
 
 def compute_form_factors(q_grid, ff_a, ff_b, ff_c):
     """
@@ -185,8 +186,8 @@ def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
             pool = mp.Pool(processes=num_cpus)
             sf_partial = partial(structure_factors_batch, xyz=xyz, ff_a=ff_a, ff_b=ff_b, ff_c=ff_c, U=U,
                                  compute_qF=compute_qF, project_on_components=project_on_components, sum_over_atoms=sum_over_atoms)
-            A = np.concatenate(pool.map(sf_partial, q_sel), axis=0)
-
+            A = np.concatenate(list(tqdm(pool.imap(sf_partial, q_sel), total=len(q_sel))), axis=0)
+            
         elif parallelize == 'ray':
             os.environ['PYTHONPATH'] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             ray.init()
