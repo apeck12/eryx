@@ -32,11 +32,13 @@ class TestScatter(object):
     def test_structure_factors(self):
         """ Check that accelerated structure factors calculation is correct. """
         U = np.random.randn(self.model.xyz.shape[0])
-        sf_np8 = scatter.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U)
-        sf_np1 = scatter.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U, n_processes=1)
+        sf_none = scatter.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U, parallelize=None)
+        sf_mp = scatter.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U, parallelize='multiprocess')
+        sf_ray = scatter.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U, parallelize='ray')
         sf_ref = reference.structure_factors(self.q_grid, self.model.xyz, self.model.elements, U)
-        assert np.allclose(np.square(np.abs(sf_np8)), np.square(np.abs(sf_ref)))
-        assert np.allclose(np.square(np.abs(sf_np1)), np.square(np.abs(sf_ref)))
+        assert np.allclose(np.square(np.abs(sf_none)), np.square(np.abs(sf_ref)))
+        assert np.allclose(np.square(np.abs(sf_mp)), np.square(np.abs(sf_ref)))
+        assert np.allclose(np.square(np.abs(sf_ray)), np.square(np.abs(sf_ref)))
         
     def test_structure_factors_vs_gemmi(self):
         """ Check that structure factors calculation matches gemmi. """
