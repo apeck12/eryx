@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import time
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,13 +16,15 @@ def RigidBodyTranslations(config):
     from eryx.models import RigidBodyTranslations
     task = config.RigidBodyTranslations
     logger.debug('Setting up model')
+    start = time.time()
     model = RigidBodyTranslations(config.setup.pdb_path, 
                                   config.setup.hsampling,
                                   config.setup.ksampling,
                                   config.setup.lsampling,
                                   res_limit=config.setup.res_limit,
                                   batch_size=config.setup.batch_size,
-                                  n_processes=config.setup.n_processes,
+                                  parallelize=config.setup.parallelize,
+                                  implementation=config.setup.implementation,
                                   expand_friedel=task.get('expand_friedel') if task.get('expand_friedel') is not None else True)
     logger.debug('Optimizing model')
     ccs, sigmas = model.optimize(np.load(config.setup.exp_map), 
@@ -31,3 +34,4 @@ def RigidBodyTranslations(config):
     model.plot_scan(output=os.path.join(config.setup.root_dir, "figs/scan_rigidbodytranslations.png"))
     np.save(os.path.join(config.setup.root_dir, "models/rigidbodytranslations.npy"), model.opt_map)
     np.save(os.path.join(config.setup.root_dir, "base/mtransform.npy"), model.transform)
+    print(f"elapsed time: {(time.time()-start)/60.0}")

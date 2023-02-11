@@ -6,8 +6,9 @@ setup:
   ksampling: [-27.454545454545453, 27.454545454545453, 11]
   lsampling: [-0.45454545454545453, 30.454545454545453, 11]
   res_limit: 1.25
-  batch_size: 10000
-  n_processes: 8
+  batch_size: 5000
+  parallelize: multiprocess
+  implementation: torch
 
 RigidBodyTranslations:
   sigmas_min: 0.1
