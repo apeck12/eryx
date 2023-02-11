@@ -7,6 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from eryx.pdb import AtomicModel
 import eryx.reference as reference
 import eryx.scatter as scatter
+import eryx.scatter_torch as scatter_torch
 import eryx.map_utils as map_utils
 
 class TestScatter(object):
@@ -25,10 +26,12 @@ class TestScatter(object):
         indices = np.random.randint(0, high=self.q_grid.shape[0], size=4)
         atom_index = np.random.randint(0, high=self.model.ff_a.shape[0], size=1)[0]
         fj = scatter.compute_form_factors(self.q_grid[indices], self.model.ff_a, self.model.ff_b, self.model.ff_c)[:,atom_index]
+        fj_torch = scatter_torch.compute_form_factors(self.q_grid[indices], self.model.ff_a, self.model.ff_b, self.model.ff_c)[:,atom_index]
         stols2 = np.square(np.linalg.norm(self.q_grid[indices], axis=1) / (4*np.pi))
         ref_fj = np.array([self.model.elements[atom_index].it92.calculate_sf(st2) for st2 in stols2])
         assert np.allclose(ref_fj, fj)
-
+        assert np.allclose(ref_fj, fj_torch, rtol=1e-3)
+        
     def test_structure_factors(self):
         """ Check that accelerated structure factors calculation is correct. """
         U = np.random.randn(self.model.xyz.shape[0])
@@ -41,6 +44,12 @@ class TestScatter(object):
         assert np.allclose(np.square(np.abs(sf_mp)), np.square(np.abs(sf_ref)))
         assert np.allclose(np.square(np.abs(sf_ray)), np.square(np.abs(sf_ref)))
 
+        # test torch implementations; multiprocess version is known to stall in this set-up: https://github.com/explosion/spaCy/issues/4667.
+        sf_none = scatter_torch.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U, parallelize=None)
+        sf_ray = scatter_torch.structure_factors(self.q_grid, self.model.xyz, self.model.ff_a, self.model.ff_b, self.model.ff_c, U, parallelize='ray')
+        assert np.allclose(np.square(np.abs(sf_none)), np.square(np.abs(sf_ref)), rtol=1e-3)
+        assert np.allclose(np.square(np.abs(sf_ray)), np.square(np.abs(sf_ref)), rtol=1e-3)
+        
     def test_structure_factors_vs_gemmi(self):
         """ Check that structure factors calculation matches gemmi. """
         hkl = np.random.randint(-10, high=10, size=3)
