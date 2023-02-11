@@ -4,8 +4,12 @@ import re
 import os
 from .pdb import AtomicModel
 from .map_utils import *
-from .scatter import structure_factors
+from .scatter_torch import structure_factors
 
+def override_import():
+    from .scatter import structure_factors
+    print(structure_factors.__globals__['__file__'])
+    
 def natural_sort(l): 
     """
     Natural sort items in list. Helper function for guinier_reconstruct.
@@ -66,7 +70,7 @@ def guinier_reconstruct(ensemble_dir, n_grid_points, res_mask, n_asu, weights=No
     return Id
 
 def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True, 
-                              res_limit=0, batch_size=5000, n_processes=8):
+                              res_limit=0, batch_size=5000, parallelize='multiprocess', implementation='torch'):
     """
     Compute the crystal transform as the coherent sum of the
     asymmetric units. If expand_p1 is False, it is assumed 
@@ -93,8 +97,10 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
         high resolution limit
     batch_size : int
         number of q-vectors to evaluate per batch 
-    n_processes : int
-        number of processors over which to parallelize the calculation
+    parallelize : str
+        parallelization mode - multiprocess, ray, or None
+    implementation : str
+        structure factor implementation - torch or numpy
         
     Returns
     -------
@@ -103,6 +109,9 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
     I : numpy.ndarray, 3d
         intensity map of the crystal transform
     """
+    if implementation=='numpy':
+        override_import()
+    
     model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
     model.flatten_model()
     hkl_grid, map_shape = generate_grid(model.A_inv, 
@@ -123,7 +132,7 @@ def compute_crystal_transform(pdb_path, hsampling, ksampling, lsampling, U=None,
                                                       model.ff_c,
                                                       U=U, 
                                                       batch_size=batch_size,
-                                                      n_processes=n_processes)))
+                                                      parallelize=parallelize)))
     return q_grid, I.reshape(map_shape)
 
 def compute_molecular_transform(pdb_path, hsampling, ksampling, lsampling, U=None, expand_p1=True,
