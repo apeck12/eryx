@@ -7,6 +7,10 @@ from .map_utils import *
 from .scatter_torch import structure_factors
 
 def override_import():
+    """
+    Override structure factor calculation import from torch-
+    to numpy-based implementation.
+    """
     from .scatter import structure_factors
     print(structure_factors.__globals__['__file__'])
     
