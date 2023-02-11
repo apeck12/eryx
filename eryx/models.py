@@ -12,6 +12,13 @@ from .stats import compute_cc
 from .base import compute_molecular_transform, compute_crystal_transform
 
 class RigidBodyTranslations:
+
+    """
+    Model in which the contents of each asymmetric unit are displaced
+    from their ideal lattice positions, with displacements drawn from
+    a Gaussian distribution. Mathematically the diffuse scattering is
+    a scaled copy of the molecular transform.
+    """
     
     def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=0,
                  batch_size=5000, parallelize='multiprocess', implementation='torch'):
