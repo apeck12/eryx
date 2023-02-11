@@ -13,13 +13,15 @@ from .base import compute_molecular_transform, compute_crystal_transform
 
 class RigidBodyTranslations:
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_friedel=True, res_limit=0,
+                 batch_size=5000, parallelize='multiprocess', implementation='torch'):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_friedel, res_limit, batch_size, n_processes)
+        self._setup(pdb_path, expand_friedel, res_limit, batch_size, parallelize, implementation)
         
-    def _setup(self, pdb_path, expand_friedel=True, res_limit=0, batch_size=10000, n_processes=8):
+    def _setup(self, pdb_path, expand_friedel=True, res_limit=0,
+               batch_size=5000, parallelize='multiprocess', implementation='torch'):
         """
         Set up class, including computing the molecular transform.
         
@@ -31,10 +33,10 @@ class RigidBodyTranslations:
             if True, expand to include portion of reciprocal space related by Friedel's law
         res_limit : float
             high resolution limit
-        batch_size : int     
-            number of q-vectors to evaluate per batch
-        n_processes : int
-            number of processors for structure factor calculation
+        parallelize : str
+            parallelization mode - multiprocess, ray, or None
+        implementation : str
+            structure factor implementation - torch or numpy
         """
         self.q_grid, self.transform = compute_molecular_transform(pdb_path, 
                                                                   self.hsampling, 
@@ -43,7 +45,8 @@ class RigidBodyTranslations:
                                                                   expand_friedel=expand_friedel,
                                                                   res_limit=res_limit,
                                                                   batch_size=batch_size,
-                                                                  n_processes=n_processes)
+                                                                  parallelize=parallelize,
+                                                                  implementation=implementation)
         self.transform[self.transform==0] = np.nan # compute_cc expects masked values to be np.nan
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         self.map_shape = self.transform.shape

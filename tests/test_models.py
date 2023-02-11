@@ -28,12 +28,14 @@ class TestTransforms:
                                                self.hsampling,
                                                self.ksampling,
                                                self.lsampling,
-                                               expand_p1=True)
+                                               expand_p1=True,
+                                               parallelize=None)
         q_grid, I2 = compute_crystal_transform(self.pdb_path_p1,
                                                self.hsampling,
                                                self.ksampling,
                                                self.lsampling,
-                                               expand_p1=False)
+                                               expand_p1=False,
+                                               parallelize=None)
         # crystal transform is more sensitive to limited precision of pdb xyz
         assert np.allclose(np.corrcoef(I1.flatten(), I2.flatten())[0,1], 1)
         assert np.allclose(np.mean(np.abs(I1 - I2) / I2), 0, atol=0.01)
@@ -99,7 +101,7 @@ class TestRigidBodyTranslations:
     """
     def setup_class(cls):
         pdb_path = "pdbs/5zck.pdb"
-        cls.model = RigidBodyTranslations(pdb_path, (-4,4,1), (-17,17,1), (-29,29,1))
+        cls.model = RigidBodyTranslations(pdb_path, (-4,4,1), (-17,17,1), (-29,29,1), parallelize=None)
         
     def test_anisotropic_sigma(self):
         """ Check that maps with the same (an)isotropic sigma match. """
