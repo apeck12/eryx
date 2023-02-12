@@ -7,9 +7,11 @@ import os
 from tqdm import tqdm
 from .pdb import AtomicModel, Crystal, GaussianNetworkModel
 from .map_utils import *
-from .scatter import structure_factors
+from .scatter_torch import structure_factors
 from .stats import compute_cc
-from .base import compute_molecular_transform, compute_crystal_transform
+from .base import compute_molecular_transform
+from .base import compute_crystal_transform
+from .base import override_import
 
 class RigidBodyTranslations:
 
@@ -416,15 +418,16 @@ class RigidBodyRotations:
     oriented axis with a normally distributed rotation angle.
     """
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, res_limit=0, batch_size=10000, n_processes=8):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, res_limit=0,
+                 batch_size=10000, parallelize='multiprocess', implementation='torch'):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1, res_limit)
+        self._setup(pdb_path, expand_p1, res_limit, implementation)
         self.batch_size = batch_size
-        self.n_processes = n_processes 
+        self.parallelize = parallelize 
         
-    def _setup(self, pdb_path, expand_p1, res_limit=0):
+    def _setup(self, pdb_path, expand_p1, res_limit, implementation):
         """
         Compute q-vectors to evaluate.
         
@@ -436,7 +439,12 @@ class RigidBodyRotations:
             if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
         res_limit : float
             high-resolution limit in Angstrom
+        implementation : str
+            variant of structure factor calcluation, torch or numpy
         """
+        if implementation=='numpy':
+            override_import()
+            
         self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=-1)
         hkl_grid, self.map_shape = generate_grid(self.model.A_inv, 
                                                  self.hsampling, 
@@ -521,7 +529,7 @@ class RigidBodyRotations:
                                           self.model.ff_c[asu], 
                                           U=None, 
                                           batch_size=self.batch_size,
-                                          n_processes=self.n_processes)
+                                          parallelize=self.parallelize)
                     if ensemble_dir is not None:
                         np.save(os.path.join(ensemble_dir, out_prefix + f"_asu{asu}.npy"), A)
                     fc[self.mask] += A

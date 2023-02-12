@@ -153,7 +153,7 @@ class TestRigidBodyRotations:
     """
     def setup_class(cls):
         pdb_path = "pdbs/2ol9.pdb"
-        cls.model = RigidBodyRotations(pdb_path, (-14,14,1), (-5,5,1), (-15,15,1))
+        cls.model = RigidBodyRotations(pdb_path, (-14,14,1), (-5,5,1), (-15,15,1), parallelize=None)
 
     def test_optimize(self):
         """ Check that optimization identifies the correct sigma. """
