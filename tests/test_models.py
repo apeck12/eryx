@@ -124,7 +124,7 @@ class TestLiquidLikeMotions:
     """
     def setup_class(cls):
         cls.pdb_path = "pdbs/5zck.pdb"
-        cls.model = LiquidLikeMotions(cls.pdb_path, (-5,5,2), (-13,13,2), (-20,20,2), expand_p1=True)
+        cls.model = LiquidLikeMotions(cls.pdb_path, (-5,5,2), (-13,13,2), (-20,20,2), expand_p1=True, parallelize=None)
 
     def test_mask(self):
         """ Check that mask is only applied to out-of-bounds q-vectors. """

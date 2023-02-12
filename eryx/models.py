@@ -161,14 +161,14 @@ class LiquidLikeMotions:
     and the convolution is with the molecular rather than crystal transform.
     """
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
-                 border=1, res_limit=0, batch_size=5000, n_processes=8, asu_confined=False):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, border=1, res_limit=0,
+                 batch_size=5000, parallelize='multiprocess', implementation='torch', asu_confined=False):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, n_processes, asu_confined)
+        self._setup(pdb_path, expand_p1, border, res_limit, batch_size, parallelize, implementation, asu_confined)
                 
-    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, n_processes, asu_confined):
+    def _setup(self, pdb_path, expand_p1, border, res_limit, batch_size, parallelize, implementation, asu_confined):
         """
         Set up class, including calculation of the crystal or molecular 
         transform for the classic and asu-confined variants of the LLM,
@@ -187,8 +187,10 @@ class LiquidLikeMotions:
             high-resolution limit in Angstrom
         batch_size : int
             number of q-vectors to evaluate per batch
-        n_processes : int
-            number of processes for structure factor calculation
+        parallelize : str
+            parallelization mode - multiprocess, ray, or None
+        implementation : str
+            structure factor implementation - torch or numpy
         asu_confined : bool
             False for crystal transform, True for molecular trasnsform
         """
@@ -216,7 +218,8 @@ class LiquidLikeMotions:
                                                                     expand_p1=expand_p1,
                                                                     res_limit=res_limit,
                                                                     batch_size=batch_size,
-                                                                    n_processes=n_processes)
+                                                                    parallelize=parallelize,
+                                                                    implementation=implementation)
         else:
             self.q_grid, self.transform = compute_molecular_transform(pdb_path,
                                                                       hsampling_padded,
@@ -225,8 +228,8 @@ class LiquidLikeMotions:
                                                                       expand_p1=expand_p1,
                                                                       expand_friedel=False,
                                                                       res_limit=res_limit,
-                                                                      batch_size=batch_size, 
-                                                                      n_processes=n_processes)
+                                                                      parallelize=parallelize, 
+                                                                      implementation=implementation)
         self.q_mags = np.linalg.norm(self.q_grid, axis=1)
         
         # generate mask for padded region
@@ -243,6 +246,7 @@ class LiquidLikeMotions:
         self.scan_gammas = []
         self.scan_ccs = []
         self.opt_map = None
+        self.ft_transform = None
         
     def fft_convolve(self, transform, kernel):
         """ 
@@ -262,9 +266,10 @@ class LiquidLikeMotions:
         conv : numpy.ndarray 
             convolved map
         """
-        ft_transform = np.fft.fftn(transform)
+        if self.ft_transform is None:
+            self.ft_transform = np.fft.fftn(transform)
         ft_kernel = np.fft.fftn(kernel/kernel.sum()) 
-        ft_conv = ft_transform * ft_kernel
+        ft_conv = self.ft_transform * ft_kernel
         return np.fft.ifftshift(np.fft.ifftn(ft_conv).real)
 
     def plot_scan(self, output=None):
