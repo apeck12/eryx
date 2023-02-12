@@ -689,17 +689,18 @@ class NonInteractingDeformableMolecules:
 
     def __init__(self, pdb_path, hsampling, ksampling, lsampling,
                  expand_p1=True, res_limit=0, gnm_cutoff=4.,
-                 batch_size=10000, n_processes=8):
+                 q2_rounding=3, batch_size=5000,
+                 parallelize='multiprocess', implementation='torch'):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
         self.batch_size = batch_size
-        self.n_processes = n_processes
-        self._setup(pdb_path, expand_p1, res_limit)
+        self.parallelize = parallelize
+        self._setup(pdb_path, expand_p1, res_limit, q2_rounding, implementation)
         self._setup_gnm(pdb_path, gnm_cutoff)
         self._setup_covmat()
         
-    def _setup(self, pdb_path, expand_p1, res_limit, q2_rounding=3):
+    def _setup(self, pdb_path, expand_p1, res_limit, q2_rounding, implementation):
         """
         Compute q-vectors to evaluate.
 
@@ -707,11 +708,18 @@ class NonInteractingDeformableMolecules:
         ----------
         pdb_path : str
             path to coordinates file of asymmetric unit
+        expand_p1 : bool
+            if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
         res_limit : float
             high-resolution limit in Angstrom
         q2_rounding : int
             number of decimals to round q squared to, default: 3
+        implementation : str
+            variant of structure factor calcluation, torch or numpy
         """
+        if implementation=='numpy':
+            override_import()
+
         self.model = AtomicModel(pdb_path, expand_p1=expand_p1)
 
         hkl_grid, self.map_shape = generate_grid(self.model.A_inv,
@@ -835,7 +843,7 @@ class NonInteractingDeformableMolecules:
                                                                                self.model.ff_c[i_asu],
                                                                                U=self.ADP,
                                                                                batch_size=self.batch_size,
-                                                                               n_processes=self.n_processes,
+                                                                               parallelize=self.parallelize,
                                                                                project_on_components=self.u,
                                                                                sum_over_atoms=False))), self.s)
             else:
@@ -846,7 +854,7 @@ class NonInteractingDeformableMolecules:
                                                                         self.model.ff_c[i_asu],
                                                                         U=self.ADP,
                                                                         batch_size=self.batch_size,
-                                                                        n_processes=self.n_processes,
+                                                                        parallelize=self.parallelize,
                                                                         project_on_components=self.u[:,rank],
                                                                         sum_over_atoms=False))) * self.s[rank]
         Id = np.multiply(self.q2_unique[self.q2_unique_inverse], Id)
@@ -883,7 +891,7 @@ class NonInteractingDeformableMolecules:
                                          self.model.ff_c[i_asu],
                                          U=self.ADP,
                                          batch_size=self.batch_size,
-                                         n_processes=self.n_processes,
+                                         parallelize=self.parallelize,
                                          sum_over_atoms=False)
 
         for iq in tqdm(range(self.q_grid.shape[0])):
