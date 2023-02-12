@@ -149,14 +149,15 @@ def structure_factors_torch(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
 def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
                       batch_size=100000, parallelize='multiprocess',
                       compute_qF=False, project_on_components=None,
-                      sum_over_atoms=True):
+                      sum_over_atoms=True, progress_bar=True):
     """
     Batched version of the structure factor calculation. See 
     docstring for structure_factors_batch for parameters and 
     returns, with the exception of the parallelize argument,
     which can be None (for 1 core), 'multiprocess', or 'ray'.
     We use psutil to automatically deduce the number of cores
-    available.
+    available. The progress_bar option shsould be set to False
+    if the function calling this also uses tqdm.
     """
     n_batches = q_grid.shape[0] // batch_size
     if n_batches == 0:
@@ -186,7 +187,10 @@ def structure_factors(q_grid, xyz, ff_a, ff_b, ff_c, U=None,
             pool = mp.Pool(processes=num_cpus)
             sf_partial = partial(structure_factors_batch, xyz=xyz, ff_a=ff_a, ff_b=ff_b, ff_c=ff_c, U=U,
                                  compute_qF=compute_qF, project_on_components=project_on_components, sum_over_atoms=sum_over_atoms)
-            A = np.concatenate(list(tqdm(pool.imap(sf_partial, q_sel), total=len(q_sel))), axis=0)
+            if progress_bar:
+                A = np.concatenate(list(tqdm(pool.imap(sf_partial, q_sel), total=len(q_sel))), axis=0)
+            else:
+                A = np.concatenate(pool.map(sf_partial, q_sel), axis=0)
             
         elif parallelize == 'ray':
             os.environ['PYTHONPATH'] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

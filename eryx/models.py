@@ -940,17 +940,17 @@ class OnePhonon:
                  expand_p1=True, group_by='asu',
                  res_limit=0., model='gnm',
                  gnm_cutoff=4., gamma_intra=1., gamma_inter=1.,
-                 batch_size=10000, n_processes=8):
+                 batch_size=5000, parallelize='multiprocess', implementation='torch'):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
         self.batch_size = batch_size
-        self.n_processes = n_processes
-        self._setup(pdb_path, expand_p1, res_limit, group_by)
+        self.parallelize = parallelize
+        self._setup(pdb_path, expand_p1, res_limit, group_by, implementation)
         self._setup_phonons(pdb_path, model,
                             gnm_cutoff, gamma_intra, gamma_inter)
 
-    def _setup(self, pdb_path, expand_p1, res_limit, group_by):
+    def _setup(self, pdb_path, expand_p1, res_limit, group_by, implementation):
         """
         Compute q-vectors to evaluate and build the unit cell
         and its nearest neighbors while storing useful dimensions.
@@ -968,6 +968,9 @@ class OnePhonon:
             level of rigid-body assembly.
             For now, only None and 'asu' have been implemented.
         """
+        if implementation=='numpy':
+            override_import()
+
         self.model = AtomicModel(pdb_path, expand_p1)
 
         self.hkl_grid, self.map_shape = generate_grid(self.model.A_inv,
@@ -1392,10 +1395,11 @@ class OnePhonon:
                             self.model.ff_c[i_asu],
                             U=ADP,
                             batch_size=self.batch_size,
-                            n_processes=self.n_processes,
+                            parallelize=self.parallelize,
                             compute_qF=True,
                             project_on_components=self.Amat[i_asu],
-                            sum_over_atoms=False)
+                            sum_over_atoms=False,
+                            progress_bar=False)
                     F = F.reshape((q_indices.shape[0],
                                    self.n_asu * self.n_dof_per_asu))
 
@@ -1418,10 +1422,10 @@ class OnePhononBrillouin:
     def __init__(self, pdb_path, h, k, l, N,
                  group_by='asu', model='gnm',
                  gnm_cutoff=4., gamma_intra=1., gamma_inter=1.,
-                 batch_size=10000, n_processes=8):
+                 batch_size=10000, parallelize='multiprocess', implementation='torch'):
         self.phonon = OnePhonon(pdb_path,(h-1,h+1,N),(k-1,k+1,N), (l-1,l+1,N),
                                 group_by=group_by, model=model,
                                 gnm_cutoff=gnm_cutoff, gamma_intra=gamma_intra, gamma_inter=gamma_inter,
-                                batch_size=batch_size, n_processes=n_processes)
+                                batch_size=batch_size, parallelize=parallelize, implementation=implementation)
         self.Id = self.phonon.apply_disorder().reshape(self.phonon.map_shape)[N//2+1:-N//2,N//2+1:-N//2,N//2+1:-N//2]
 
