@@ -583,16 +583,16 @@ class Ensemble:
     asymmetric unit populate distinct biological states.
     """
     
-    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, 
-                 res_limit=0, batch_size=10000, n_processes=8, frame=-1):
+    def __init__(self, pdb_path, hsampling, ksampling, lsampling, expand_p1=True, res_limit=0,
+                 batch_size=5000, parallelize='multiprocess', implementation='torch', frame=-1):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
-        self._setup(pdb_path, expand_p1, res_limit, frame)
+        self._setup(pdb_path, expand_p1, res_limit, implementation, frame)
         self.batch_size = batch_size
-        self.n_processes = n_processes
+        self.parallelize = parallelize
         
-    def _setup(self, pdb_path, expand_p1, res_limit, frame):
+    def _setup(self, pdb_path, expand_p1, res_limit, implementation, frame):
         """
         Load model and compute q-vectors to evaluate / mask.
         
@@ -604,9 +604,14 @@ class Ensemble:
             if True, expand to p1 (i.e. if PDB corresponds to the asymmetric unit)
         res_limit : float
             high-resolution limit in Angstrom
+        implementation : str
+            variant of structure factor calcluation, torch or numpy
         frame : int
             load specified conformation or all states if -1
         """
+        if implementation=='numpy':
+            override_import()
+        
         self.model = AtomicModel(pdb_path, expand_p1=expand_p1, frame=frame)
         hkl_grid, self.map_shape = generate_grid(self.model.A_inv, 
                                                  self.hsampling, 
@@ -661,8 +666,7 @@ class Ensemble:
                                       self.model.ff_c[index], 
                                       U=None, 
                                       batch_size=self.batch_size,
-                                      n_processes=self.n_processes)
-
+                                      parallelize=self.parallelize)
                 if ensemble_dir is not None:
                     np.save(os.path.join(ensemble_dir, f"conf{self.frame:05}_asu{asu}.npy"), A)
 
