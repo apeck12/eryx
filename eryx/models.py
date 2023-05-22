@@ -940,7 +940,7 @@ class OnePhonon:
                  expand_p1=True, group_by='asu',
                  res_limit=0., model='gnm',
                  gnm_cutoff=4., gamma_intra=1., gamma_inter=1.,
-                 batch_size=5000, parallelize='multiprocess', implementation='torch'):
+                 batch_size=10000, parallelize='multiprocess', implementation='torch'):
         self.hsampling = hsampling
         self.ksampling = ksampling
         self.lsampling = lsampling
