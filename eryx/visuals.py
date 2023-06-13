@@ -190,6 +190,8 @@ class VisualizeCrystal:
         self.draw_data = None
         self.color_by = 'asu_id'
         self.color_palette = 'xkcd'
+        self.opacity = 1.0
+        self.network_width = 10
         self.gnm = gnm   # if not None, show inter ASU contacts
         if self.gnm is not None:
             self.gnm_contacts_indices = self._setup_gnm_contacts()
@@ -200,11 +202,14 @@ class VisualizeCrystal:
         if self.onephonon is not None:
             self.onephonon_covar_indices = self._setup_onephonon_covar()
 
-    def show(self):
+    def show(self, background=True):
         """
         Show the crystal's supercell in a plotly figure.
         """
         self.draw_supercell()
+        self.fig.update_scenes(xaxis_visible=background,
+                               yaxis_visible=background,
+                               zaxis_visible=background)
         self.fig.show()
 
     def draw_supercell(self):
@@ -270,7 +275,8 @@ class VisualizeCrystal:
         self._draw_go_vector(self._build_go_vector(self.crystal.get_asu_xyz(asu_id, unit_cell),
                                                    mode='markers',
                                                    marker=dict(size=5,
-                                                               color=self._get_color(asu_id, unit_cell)),
+                                                               color=self._get_color(asu_id, unit_cell),
+                                                               opacity=self.opacity),
                                                    name=name,
                                                    showlegend=showlegend))
 
@@ -344,13 +350,12 @@ class VisualizeCrystal:
                 if len(pairs[i_at]) == 0:
                     continue
                 for j_at in pairs[i_at]:
-                    #print(i_at, j_at, i_asu, self.crystal.hkl_to_id(unit_cell), asu_id)
                     xyz[0] = self.crystal.get_asu_xyz(i_asu,[0,0,0])[i_at]
                     xyz[1] = self.crystal.get_asu_xyz(asu_id,unit_cell)[j_at]
                     self._draw_go_vector(
                         self._build_go_vector(xyz=xyz,
-                                              line=dict(width=2,
-                                                        color=self._get_color(asu_id,unit_cell)),
+                                              line=dict(width=self.network_width,
+                                                        color='black'),
                                               showlegend=showlegend))
 
     def _draw_go_vector(self, go_vector):
@@ -395,6 +400,8 @@ class VisualizeCrystal:
         elif self.color_by == 'unit_cell':
             idx = self.crystal.hkl_to_id(unit_cell)
             ndx = self.crystal.n_cell
+        else:
+            return self.color_by
         if self.color_palette == 'xkcd':
             color_dict = mcolors.XKCD_COLORS
         elif self.color_palette == 'tableau':
