@@ -736,7 +736,7 @@ class NonInteractingDeformableMolecules:
         Kinv = self.gnm.compute_Kinv(self.gnm.compute_hessian())
         Kinv = np.real(Kinv[0, :, 0, :])  # only need that
         ADP_scale = np.mean(self.model.adp[0]) / \
-                    (8 * np.pi * np.pi * np.mean(np.diag(Kinv)) / 3.)
+                    8 * np.pi * np.pi * np.mean(np.diag(Kinv))
         self.covar = Kinv * ADP_scale
         self.ADP = np.diag(self.covar)
 
@@ -1333,7 +1333,7 @@ class OnePhonon:
         to a set of interacting rigid bodies.
         """
         if use_data_adp:
-            ADP = 3. * self.model.adp[0] / (8 * np.pi * np.pi)
+            ADP = self.model.adp[0] / (8 * np.pi * np.pi)
         else:
             ADP = self.ADP
         Id = np.zeros((self.q_grid.shape[0]), dtype='complex')
