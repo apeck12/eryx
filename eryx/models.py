@@ -736,7 +736,7 @@ class NonInteractingDeformableMolecules:
         Kinv = self.gnm.compute_Kinv(self.gnm.compute_hessian())
         Kinv = np.real(Kinv[0, :, 0, :])  # only need that
         ADP_scale = np.mean(self.model.adp[0]) / \
-                    8 * np.pi * np.pi * np.mean(np.diag(Kinv))
+                    (8 * np.pi * np.pi * np.mean(np.diag(Kinv)))
         self.covar = Kinv * ADP_scale
         self.ADP = np.diag(self.covar)
 
