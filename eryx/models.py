@@ -1271,9 +1271,10 @@ class OnePhonon:
         #            (8 * np.pi * np.pi * np.mean(np.diag(self.covar[:,self.crystal.hkl_to_id([0,0,0]),:])) / 3.)
         #self.covar *= ADP_scale
         self.ADP = np.real(np.diag(self.covar[:,self.crystal.hkl_to_id([0,0,0]),:]))
-        self.ADP = self.Amat[0] @ self.ADP
+        Amat = np.transpose(self.Amat, (1,0,2)).reshape(self.n_dof_per_asu_actual, self.n_asu*self.n_dof_per_asu)
+        self.ADP = Amat @ self.ADP
         self.ADP = np.sum(self.ADP.reshape(int(self.ADP.shape[0]/3),3),axis=1)
-        ADP_scale = np.mean(self.model.adp[0]) / (8*np.pi*np.pi*np.mean(self.ADP)/3)
+        ADP_scale = np.mean(self.model.adp) / (8*np.pi*np.pi*np.mean(self.ADP)/3)
         self.ADP *= ADP_scale
         self.covar *= ADP_scale
         self.covar = np.real(self.covar.reshape((self.n_asu, self.n_dof_per_asu,
