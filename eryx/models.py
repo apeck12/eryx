@@ -631,6 +631,7 @@ class Ensemble:
 
             for conf in range(self.model.n_conf):
                 index = conf * self.model.n_asu + asu
+                U = self.model.adp[index] / (8 * np.pi * np.pi)
                 A = structure_factors(self.q_grid[self.mask], 
                                       self.model.xyz[index], 
                                       self.model.ff_a[index], 
