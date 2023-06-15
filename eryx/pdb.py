@@ -136,7 +136,10 @@ class AtomicModel:
             self.structure.remove_alternative_conformations()
             self.structure.remove_hydrogens()
             self.structure.remove_waters()
-            self.structure.remove_ligands_and_waters()
+            try:
+                self.structure.remove_ligands_and_waters()
+            except RuntimeError as e:
+                print(e)
             self.structure.remove_empty_chains()
 
     def _extract_cell(self):
