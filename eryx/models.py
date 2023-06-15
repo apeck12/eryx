@@ -498,13 +498,14 @@ class RigidBodyRotations:
                 # apply Guinier's equation to rotated ensemble
                 fc = np.zeros(self.q_grid.shape[0], dtype=complex)
                 fc_square = np.zeros(self.q_grid.shape[0])
+                U = self.model.adp[asu] / (8 * np.pi * np.pi)
                 for rnum in range(num_rot):
                     A = structure_factors(self.q_grid[self.mask], 
                                           xyz_rot[rnum], 
                                           self.model.ff_a[asu], 
                                           self.model.ff_b[asu], 
                                           self.model.ff_c[asu], 
-                                          U=None, 
+                                          U=U, 
                                           batch_size=self.batch_size,
                                           n_processes=self.n_processes)
                     if ensemble_dir is not None:
@@ -631,12 +632,13 @@ class Ensemble:
 
             for conf in range(self.model.n_conf):
                 index = conf * self.model.n_asu + asu
+                U = self.model.adp[index] / (8 * np.pi * np.pi)
                 A = structure_factors(self.q_grid[self.mask], 
                                       self.model.xyz[index], 
                                       self.model.ff_a[index], 
                                       self.model.ff_b[index], 
                                       self.model.ff_c[index], 
-                                      U=None, 
+                                      U=U, 
                                       batch_size=self.batch_size,
                                       n_processes=self.n_processes)
 
