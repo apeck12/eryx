@@ -211,8 +211,12 @@ class AtomicModel:
             model = self.structure[fr]
             residues = [res for ch in model for res in ch]
             self._extract_xyz(residues, expand_p1)
-        self._extract_adp(residues, expand_p1)
-        self._extract_ff_coefs(residues, expand_p1)
+            if not expand_p1:
+                self._extract_adp(residues, expand_p1)
+                self._extract_ff_coefs(residues, expand_p1)
+        if expand_p1:
+            self._extract_adp(residues, expand_p1)
+            self._extract_ff_coefs(residues, expand_p1)
         
     def _get_xyz_asus(self, xyz):
         """
