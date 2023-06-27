@@ -16,11 +16,11 @@ RigidBodyTranslations:
   expand_friedel: False
 
 LiquidLikeMotions:
-  sigmas_min: 0.34
-  sigmas_max: 0.38
-  gammas_min: 24
-  gammas_max: 28
+  sigmas_min: 0.30
+  sigmas_max: 0.33
+  gammas_min: 20
+  gammas_max: 24
   ns_search: 2
   ng_search: 2
-  asu_confined: False
+  asu_confined: True
   
