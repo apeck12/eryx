@@ -37,3 +37,19 @@ def list_to_tuples(config):
             if type(config[key][subkey]) == list:
                 config[key][subkey] = tuple(config[key][subkey])
     return config
+
+def expand_sampling(config):
+    """
+    Check that sampling keys are symmetric about the reciprocal
+    space origin and expand as needed.
+   
+    Parameters
+    ----------
+    config : AttrDict object
+        dictionary with setup key that contains xsampling keys
+    """
+    for key in ['hsampling','ksampling','lsampling']:
+        if config.setup[key][0] != -1*config.setup[key][1]:
+            new_val = max(np.abs(config.setup[key][0]), np.abs(config.setup[key][1]))
+            config.setup[key] = (-1*new_val, new_val, config.setup[key][2])
+ 

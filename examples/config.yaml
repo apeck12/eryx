@@ -1,7 +1,7 @@
 setup:
   root_dir: '/Users/apeck/Desktop/diffuse/processing/cxidb_128/temp'
   pdb_path: '../tests/pdbs/6o2h_clean.pdb'
-  exp_map: '/Users/apeck/Desktop/diffuse/processing/cxidb_128/models/exp_rasu.npy'
+  exp_map: '/Users/apeck/Desktop/diffuse/processing/cxidb_128/models/exp.npy'
   hsampling: [-22.46153846153846, 22.46153846153846, 13]
   ksampling: [-27.454545454545453, 27.454545454545453, 11]
   lsampling: [-0.45454545454545453, 30.454545454545453, 11]
@@ -14,3 +14,13 @@ RigidBodyTranslations:
   sigmas_max: 0.9
   n_search: 9
   expand_friedel: False
+
+LiquidLikeMotions:
+  sigmas_min: 0.30
+  sigmas_max: 0.33
+  gammas_min: 20
+  gammas_max: 24
+  ns_search: 2
+  ng_search: 2
+  asu_confined: True
+  
