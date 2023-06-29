@@ -61,3 +61,25 @@ def LiquidLikeMotions(config):
     model.plot_scan(output=os.path.join(config.setup.root_dir, f"figs/scan_liquidlikemotions{extension}.png"))
     np.save(os.path.join(config.setup.root_dir, f"models/liquidlikemotions{extension}.npy"), model.opt_map)
     np.save(os.path.join(config.setup.root_dir, f"base/{ntransform}.npy"), model.transform)
+
+def OnePhonon(config):
+    """ Model elastic network-based motions in the one-phonon approximation. """
+    from eryx.models import OnePhonon
+    from parse_yaml import expand_sampling
+    task = config.OnePhonon
+    logger.debug('Setting up model')
+    expand_sampling(config, force_int=True)
+    model = OnePhonon(config.setup.pdb_path,
+                      config.setup.hsampling,
+                      config.setup.ksampling,
+                      config.setup.lsampling,
+                      gnm_cutoff=task.gnm_cutoff,
+                      gamma_intra=task.gamma_intra,
+                      gamma_inter=task.gamma_inter,
+                      batch_size=config.setup.batch_size,
+                      n_processes=config.setup.n_processes,
+                      expand_p1=task.get('expand_p1') if task.get('expand_p1') is not None else True)
+    logger.debug('Computing diffuse map')
+    Id = model.apply_disorder(use_data_adp=True)
+    Id = Id.reshape(model.map_shape)
+    np.save(os.path.join(config.setup.root_dir, f"models/onephonon.npy"), Id)
