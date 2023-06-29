@@ -38,18 +38,23 @@ def list_to_tuples(config):
                 config[key][subkey] = tuple(config[key][subkey])
     return config
 
-def expand_sampling(config):
+def expand_sampling(config, force_int=False):
     """
-    Check that sampling keys are symmetric about the reciprocal
-    space origin and expand as needed.
-   
+    Try to expand xsampling keys to to P1 by making them 
+    symmetric about the reciprocal space origin. 
+    
     Parameters
     ----------
     config : AttrDict object
         dictionary with setup key that contains xsampling keys
+    force_int : bool
+        if True, force boundaries to nearest integer
     """
     for key in ['hsampling','ksampling','lsampling']:
         if config.setup[key][0] != -1*config.setup[key][1]:
             new_val = max(np.abs(config.setup[key][0]), np.abs(config.setup[key][1]))
             config.setup[key] = (-1*new_val, new_val, config.setup[key][2])
- 
+        if force_int:
+            config.setup[key] = (np.around(config.setup[key][0]),
+                                 np.around(config.setup[key][1]),
+                                 config.setup[key][2])

@@ -23,4 +23,8 @@ LiquidLikeMotions:
   ns_search: 2
   ng_search: 2
   asu_confined: True
-  
+
+OnePhonon:
+  gnm_cutoff: 4
+  gamma_intra: 2
+  gamma_inter: 1
